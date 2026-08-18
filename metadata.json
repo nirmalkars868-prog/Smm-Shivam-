@@ -1,0 +1,6 @@
+{
+  "name": "SMM SHIVAM Panel",
+  "description": "Full-featured Social Media Marketing (SMM) Panel with automated provider service import, QR Code UPI payments, WhatsApp support integration, and admin management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

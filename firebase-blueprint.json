@@ -1,0 +1,111 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "Registered panel users and account balances",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "balance": { "type": "number" },
+        "totalSpent": { "type": "number" },
+        "referralCode": { "type": "string" },
+        "referredByUserId": { "type": "string" },
+        "referralBalance": { "type": "number" },
+        "totalReferralEarnings": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "username", "email"]
+    },
+    "orders": {
+      "title": "Orders",
+      "description": "SMM service orders placed by users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "quantity": { "type": "number" },
+        "charge": { "type": "number" },
+        "link": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "serviceId", "quantity", "charge", "status"]
+    },
+    "depositRequests": {
+      "title": "Deposit Requests",
+      "description": "Payment and fund deposit requests",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "amount", "status"]
+    },
+    "referralCommissions": {
+      "title": "Referral Commissions",
+      "description": "Earned referral commissions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "beneficiaryUserId": { "type": "string" },
+        "sourceUserId": { "type": "string" },
+        "level": { "type": "number" },
+        "commissionAmountINR": { "type": "number" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "beneficiaryUserId", "commissionAmountINR", "status"]
+    },
+    "referralWithdrawals": {
+      "title": "Referral Withdrawals",
+      "description": "Payout requests for referral earnings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "amount": { "type": "number" },
+        "upiId": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "amount", "status"]
+    },
+    "tickets": {
+      "title": "Support Tickets",
+      "description": "Customer support tickets and responses",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "subject": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "subject", "status"]
+    },
+    "settings": {
+      "title": "Admin Settings",
+      "description": "Global application configuration settings",
+      "type": "object",
+      "properties": {
+        "siteName": { "type": "string" },
+        "upiId": { "type": "string" },
+        "merchantId": { "type": "string" },
+        "autoVerifyMerchant": { "type": "boolean" },
+        "notice": { "type": "string" }
+      }
+    }
+  }
+}

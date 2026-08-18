@@ -1,0 +1,73 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "users": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin')",
+        ".write": "auth != null && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin')"
+      }
+    },
+
+    "settings": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin')"
+    },
+
+    "depositRequests": {
+      ".read": "auth != null",
+      "$depositId": {
+        ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin' || (!data.exists() && (newData.child('userId').val() === auth.uid || newData.child('userId').val() === root.child('users/' + auth.uid + '/id').val()) && newData.child('status').val() === 'Pending'))"
+      }
+    },
+
+    "smm_store": {
+      ".read": "auth != null",
+      "settings": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin')"
+      },
+      "categories": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin')"
+      },
+      "services": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin')"
+      },
+      "depositRequests": {
+        ".read": "auth != null",
+        "$depositId": {
+          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin' || (!data.exists() && (newData.child('userId').val() === auth.uid || newData.child('userId').val() === root.child('users/' + auth.uid + '/id').val()) && newData.child('status').val() === 'Pending'))"
+        }
+      },
+      "users": {
+        ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin')",
+        "$uid": {
+          ".read": "auth != null && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin')",
+          ".write": "auth != null && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin')"
+        }
+      },
+      "orders": {
+        ".read": "auth != null",
+        "$orderId": {
+          ".write": "auth != null"
+        }
+      },
+      "tickets": {
+        ".read": "auth != null",
+        "$ticketId": {
+          ".write": "auth != null"
+        }
+      },
+      "withdrawals": {
+        ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin')",
+        "$withdrawalId": {
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin' || data.child('userId').val() === auth.uid)",
+          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('smm_store/users/' + auth.uid + '/role').val() === 'admin' || (!data.exists() && newData.child('userId').val() === auth.uid))"
+        }
+      }
+    }
+  }
+}

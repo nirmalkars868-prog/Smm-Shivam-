@@ -1,0 +1,447 @@
+import React, { useState, useEffect } from 'react';
+import { Navbar } from './components/Navbar';
+import { Footer } from './components/Footer';
+import { AuthModal, fetchUserProfile } from './components/AuthModal';
+import { auth, rtdb, ref, onValue, onAuthStateChanged, signOut } from './lib/firebaseClient';
+import { SnowEffect } from './components/SnowEffect';
+
+import { NewOrder } from './components/user/NewOrder';
+import { ServicesList } from './components/user/ServicesList';
+import { MassOrder } from './components/user/MassOrder';
+import { OrdersHistory } from './components/user/OrdersHistory';
+import { AddFunds } from './components/user/AddFunds';
+import { ReferAndEarn } from './components/user/ReferAndEarn';
+import { ApiDocs } from './components/user/ApiDocs';
+import { Tickets } from './components/user/Tickets';
+import { Updates } from './components/user/Updates';
+
+import { VipSupportBanner } from './components/user/VipSupportBanner';
+import { UserHeaderCards } from './components/user/UserHeaderCards';
+import { FloatingSupportButtons } from './components/user/FloatingSupportButtons';
+
+import { AdminOverview } from './components/admin/AdminOverview';
+import { ApiProviders } from './components/admin/ApiProviders';
+import { ManageServices } from './components/admin/ManageServices';
+import { ManageOrders } from './components/admin/ManageOrders';
+import { ManageUsers } from './components/admin/ManageUsers';
+import { ManageDeposits } from './components/admin/ManageDeposits';
+import { AdminReferrals } from './components/admin/AdminReferrals';
+import { SyncLogs } from './components/admin/SyncLogs';
+import { AdminSettings } from './components/admin/AdminSettings';
+
+import { Category, Order, Service, AdminSettings as AdminSettingsType, User } from './types';
+
+function ensureArray<T = any>(data: any): T[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data.filter(Boolean) as T[];
+  if (typeof data === 'object') return Object.values(data).filter(Boolean) as T[];
+  return [];
+}
+
+const getThemeClass = (themeName?: string) => {
+  switch (themeName) {
+    case 'cyberpunk-neon':
+      return 'bg-[#060b18] text-slate-100';
+    case 'emerald-luxury':
+      return 'bg-[#030e09] text-slate-100';
+    case 'royal-purple':
+      return 'bg-[#0a0518] text-slate-100';
+    case 'sunset-amber':
+      return 'bg-[#120804] text-slate-100';
+    case 'ice-sapphire':
+      return 'bg-[#020b1a] text-slate-100';
+    case 'clean-light':
+      return 'bg-[#0f172a] text-slate-100';
+    case 'default-dark':
+    default:
+      return 'bg-black text-slate-100';
+  }
+};
+
+export default function App() {
+  const [firebaseUser, setFirebaseUser] = useState<any | null>(null);
+  const [isAuthInitializing, setIsAuthInitializing] = useState<boolean>(true);
+  const [isProfileLoading, setIsProfileLoading] = useState<boolean>(false);
+
+  const [currentTab, setCurrentTab] = useState<string>('new-order');
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [userBalance, setUserBalance] = useState<number>(0.0);
+  const [userInfo, setUserInfo] = useState<User | null>(null);
+  const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
+  const [settings, setSettings] = useState<AdminSettingsType | undefined>(undefined);
+
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [currency, setCurrency] = useState<string>('INR');
+  const [theme, setTheme] = useState<string>('dark');
+
+  // Firebase Auth State Listener
+  useEffect(() => {
+    let isMounted = true;
+
+    // Safety timeout: If Firebase auth listener stalls, unblock loading screen after 1.5s
+    const authTimeout = setTimeout(() => {
+      if (isMounted) setIsAuthInitializing(false);
+    }, 1500);
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!isMounted) return;
+      clearTimeout(authTimeout);
+
+      if (user) {
+        setFirebaseUser(user);
+        localStorage.setItem('smm_panel_userId', user.uid);
+        setIsProfileLoading(true);
+
+        try {
+          const profile = await fetchUserProfile(user.uid);
+          if (isMounted && profile) {
+            setUserInfo(profile);
+            setUserBalance(profile.balance || 0);
+
+            const adminCheck =
+              profile.role === 'admin' ||
+              (user.email && user.email.toLowerCase().includes('shivamnirmalkar26'));
+
+            if (adminCheck) {
+              setIsAdmin(true);
+            }
+          }
+        } catch (err) {
+          console.warn('Error fetching profile from RTDB:', err);
+        } finally {
+          if (isMounted) {
+            setIsProfileLoading(false);
+            setIsAuthInitializing(false);
+          }
+        }
+        fetchUserOrders(user.uid);
+      } else {
+        setFirebaseUser(null);
+        setUserInfo(null);
+        setIsAdmin(false);
+        setUserBalance(0);
+        setIsAuthInitializing(false);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      clearTimeout(authTimeout);
+      unsubscribe();
+    };
+  }, []);
+
+  // Listen to Settings from RTDB with REST API fallback
+  useEffect(() => {
+    try {
+      const settingsRef = ref(rtdb, 'settings');
+      const unsubscribe = onValue(
+        settingsRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            setSettings(snapshot.val());
+          }
+        },
+        (error) => {
+          console.warn('Firebase RTDB settings listener fallback:', error.message);
+          fetchSettingsFromApi();
+        }
+      );
+      return () => unsubscribe();
+    } catch (e) {
+      fetchSettingsFromApi();
+    }
+  }, []);
+
+  const fetchSettingsFromApi = async () => {
+    try {
+      const res = await fetch('/api/admin/settings');
+      const data = await res.json();
+      if (data.settings) setSettings(data.settings);
+    } catch (e) {
+      console.warn('Failed to load settings via API:', e);
+    }
+  };
+
+  // Realtime Database listeners for Catalog
+  useEffect(() => {
+    try {
+      // Listen to both smm_store and root nodes
+      const smmStoreRef = ref(rtdb, 'smm_store');
+      const servicesRef = ref(rtdb, 'services');
+      const categoriesRef = ref(rtdb, 'categories');
+
+      const unsubSmmStore = onValue(smmStoreRef, (snap) => {
+        if (snap.exists()) {
+          const val = snap.val();
+          if (val) {
+            const parsedServices = ensureArray<Service>(val.services);
+            const parsedCategories = ensureArray<Category>(val.categories);
+            if (parsedServices.length > 0) setServices(parsedServices);
+            if (parsedCategories.length > 0) setCategories(parsedCategories);
+          }
+        }
+      });
+
+      const unsubCat = onValue(categoriesRef, (snap) => {
+        if (snap.exists()) {
+          const cats = ensureArray<Category>(snap.val());
+          if (cats.length > 0) setCategories(cats);
+        }
+      });
+
+      const unsubSrv = onValue(servicesRef, (snap) => {
+        if (snap.exists()) {
+          const srvs = ensureArray<Service>(snap.val());
+          if (srvs.length > 0) setServices(srvs);
+        }
+      });
+
+      return () => {
+        unsubSmmStore();
+        unsubCat();
+        unsubSrv();
+      };
+    } catch (e) {
+      console.warn('RTDB Catalog listener error, fallback to REST API:', e);
+      fetchInitialData();
+    }
+  }, []);
+
+  // Initial and on-tab-change Data Fetch via REST API
+  const fetchInitialData = async () => {
+    try {
+      const resSrv = await fetch('/api/services');
+      if (!resSrv.ok) return;
+      const dataSrv = await resSrv.json();
+
+      if (dataSrv.categories && Array.isArray(dataSrv.categories) && dataSrv.categories.length > 0) {
+        setCategories(dataSrv.categories);
+      }
+      if (dataSrv.services && Array.isArray(dataSrv.services) && dataSrv.services.length > 0) {
+        setServices(dataSrv.services);
+      }
+      if (dataSrv.settings) setSettings(dataSrv.settings);
+    } catch (error) {
+      console.warn('Initial data load notice:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchInitialData();
+  }, [currentTab]);
+
+  // Realtime User Balance & Profile Sync from RTDB
+  useEffect(() => {
+    if (!firebaseUser) return;
+    try {
+      const userRef = ref(rtdb, `users/${firebaseUser.uid}`);
+      const unsubUser = onValue(userRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const u = snapshot.val();
+          setUserInfo(u);
+          if (typeof u.balance === 'number') {
+            setUserBalance(u.balance);
+          }
+        }
+      });
+      return () => unsubUser();
+    } catch (e) {
+      console.warn('Realtime balance listener fallback:', e);
+    }
+  }, [firebaseUser]);
+
+  const activeUser = userInfo || (firebaseUser ? {
+    id: firebaseUser.uid,
+    username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+    email: firebaseUser.email || '',
+    whatsappNo: '9516862395',
+    role: isAdmin ? 'admin' : 'user',
+    balance: userBalance,
+    referralCode: 'REF' + firebaseUser.uid.substring(0, 5).toUpperCase(),
+    referralsCount: 0,
+    referralEarnings: 0,
+    createdAt: new Date().toISOString(),
+  } : null);
+
+  const fetchUserOrders = async (userId: string) => {
+    try {
+      const resOrd = await fetch(`/api/orders?userId=${userId}`);
+      const dataOrd = await resOrd.json();
+      if (dataOrd.orders) setOrders(dataOrd.orders);
+    } catch (e) {
+      console.warn('User orders fetch error:', e);
+    }
+  };
+
+  const handleAuthSuccess = (user: User) => {
+    setUserInfo(user);
+    setUserBalance(user.balance);
+    const adminCheck = user.role === 'admin' || (user.email && user.email.toLowerCase().includes('shivamnirmalkar26'));
+    if (adminCheck) {
+      setIsAdmin(true);
+      setCurrentTab('admin-overview');
+    } else {
+      setIsAdmin(false);
+      setCurrentTab('new-order');
+    }
+    setIsAuthOpen(false);
+    fetchInitialData();
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+    localStorage.removeItem('smm_panel_userId');
+    setFirebaseUser(null);
+    setUserInfo(null);
+    setIsAdmin(false);
+    setUserBalance(0);
+    setIsAuthOpen(true);
+  };
+
+  const handleOrderPlaced = () => {
+    fetchInitialData();
+    if (firebaseUser) {
+      fetchUserOrders(firebaseUser.uid);
+    }
+    setCurrentTab('orders');
+  };
+
+  const handleSelectServiceFromList = (serviceId: string, categoryName: string) => {
+    setCurrentTab('new-order');
+  };
+
+  // While Firebase Auth is initializing, show a loading screen.
+  if (isAuthInitializing) {
+    return (
+      <div className="min-h-screen bg-black text-slate-100 flex flex-col items-center justify-center font-sans">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-10 h-10 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm text-zinc-400 font-medium">Initializing SMM Panel Session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const themeClassName = getThemeClass(settings?.theme);
+
+  return (
+    <div className={`min-h-screen ${themeClassName} flex flex-col font-sans antialiased selection:bg-yellow-500 selection:text-black relative transition-colors duration-500`}>
+      {/* Snow Particles Effect Toggle */}
+      <SnowEffect enabled={settings?.snowEffect ?? false} />
+
+      {/* Navigation */}
+      <Navbar
+        currentTab={currentTab}
+        setCurrentTab={setCurrentTab}
+        isAdmin={isAdmin}
+        setIsAdmin={setIsAdmin}
+        userBalance={userBalance}
+        currency={currency}
+        setCurrency={setCurrency}
+        theme={theme}
+        setTheme={setTheme}
+        userInfo={activeUser}
+        settings={settings}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onLogout={handleLogout}
+      />
+
+      {/* Main Content Area */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 relative z-10">
+        {/* Profile Loading Notice (Non-blocking) */}
+        {firebaseUser && isProfileLoading && !userInfo && (
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 flex items-center justify-between text-yellow-400 text-xs">
+            <span>Syncing user profile with Realtime Database...</span>
+            <div className="w-3.5 h-3.5 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        )}
+
+        {/* USER TABS */}
+        {!isAdmin && (
+          <>
+            {/* VIP 24/7 Support Banner & User Welcome / Balance Header Cards */}
+            <VipSupportBanner settings={settings} />
+            <UserHeaderCards
+              username={activeUser?.username || 'digital_shivam__08'}
+              balance={userBalance}
+              currency={currency}
+              exchangeRateINR={settings?.exchangeRateINR || 86}
+            />
+
+            {currentTab === 'new-order' && (
+              <NewOrder
+                categories={categories}
+                services={services}
+                currentUser={activeUser}
+                userBalance={userBalance}
+                currency={currency}
+                settings={settings}
+                onOrderPlaced={handleOrderPlaced}
+              />
+            )}
+            {currentTab === 'services' && (
+              <ServicesList
+                categories={categories}
+                services={services}
+                currency={currency}
+                onSelectService={handleSelectServiceFromList}
+              />
+            )}
+            {currentTab === 'mass-order' && <MassOrder />}
+            {currentTab === 'orders' && <OrdersHistory orders={orders} currency={currency} />}
+            {currentTab === 'add-funds' && (
+              <AddFunds
+                currentUser={activeUser}
+                userBalance={userBalance}
+                currency={currency}
+                onBalanceUpdated={fetchInitialData}
+              />
+            )}
+            {currentTab === 'referrals' && activeUser && (
+              <ReferAndEarn currentUser={activeUser} />
+            )}
+            {currentTab === 'api' && <ApiDocs />}
+            {currentTab === 'tickets' && <Tickets />}
+            {currentTab === 'updates' && <Updates />}
+          </>
+        )}
+
+        {/* ADMIN TABS */}
+        {isAdmin && (
+          <>
+            {currentTab === 'admin-overview' && <AdminOverview currency={currency} />}
+            {currentTab === 'admin-referrals' && <AdminReferrals />}
+            {currentTab === 'admin-providers' && <ApiProviders />}
+            {currentTab === 'admin-services' && <ManageServices currency={currency} />}
+            {currentTab === 'admin-orders' && <ManageOrders currency={currency} />}
+            {currentTab === 'admin-deposits' && <ManageDeposits />}
+            {currentTab === 'admin-users' && <ManageUsers currency={currency} />}
+            {currentTab === 'admin-logs' && <SyncLogs />}
+            {currentTab === 'admin-settings' && <AdminSettings />}
+          </>
+        )}
+      </main>
+
+      {/* Auth Login/Signup Modal */}
+      <AuthModal
+        isOpen={!firebaseUser || isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onAuthSuccess={handleAuthSuccess}
+        allowClose={!!firebaseUser}
+      />
+
+      {/* Floating Support Buttons */}
+      {!isAdmin && <FloatingSupportButtons settings={settings} />}
+
+      {/* Footer */}
+      <Footer setCurrentTab={setCurrentTab} />
+    </div>
+  );
+}

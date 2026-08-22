@@ -159,6 +159,8 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
       if (!globalAudio) {
         globalAudio = new Audio();
       }
+      globalAudio.crossOrigin = 'anonymous';
+      globalAudio.preload = 'auto';
       globalAudio.src = audioUrl;
       globalAudio.volume = volume;
       globalAudio.loop = false; // continuous full song playback

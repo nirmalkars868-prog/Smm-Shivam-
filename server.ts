@@ -437,9 +437,24 @@ try {
   console.warn('Could not create uploads directory:', e);
 }
 
-// 1. Audio Streaming Endpoint (Streams uploaded MP3/WAV/WebM directly with range headers)
+// 1. Audio Streaming Endpoint (Streams uploaded MP3/WAV/WebM/M4A directly with range headers & CORS)
 app.get('/api/welcome-audio', (req, res) => {
-  const possibleFiles = ['welcome_voice.mp3', 'welcome_voice.wav', 'welcome_voice.webm', 'welcome_voice.ogg', 'welcome_voice.m4a'];
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept');
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+
+  const possibleFiles = [
+    'welcome_voice.mp3',
+    'welcome_voice.m4a',
+    'welcome_voice.wav',
+    'welcome_voice.aac',
+    'welcome_voice.webm',
+    'welcome_voice.ogg',
+  ];
   let audioFilePath = '';
 
   for (const file of possibleFiles) {
@@ -467,14 +482,16 @@ app.get('/api/welcome-audio', (req, res) => {
   const contentType =
     ext === '.mp3'
       ? 'audio/mpeg'
+      : ext === '.m4a'
+      ? 'audio/mp4'
+      : ext === '.aac'
+      ? 'audio/aac'
       : ext === '.wav'
       ? 'audio/wav'
       : ext === '.webm'
       ? 'audio/webm'
       : ext === '.ogg'
       ? 'audio/ogg'
-      : ext === '.m4a'
-      ? 'audio/mp4'
       : 'audio/mpeg';
 
   if (range) {
@@ -488,7 +505,7 @@ app.get('/api/welcome-audio', (req, res) => {
       'Accept-Ranges': 'bytes',
       'Content-Length': chunksize,
       'Content-Type': contentType,
-      'Cache-Control': 'public, max-age=3600',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
     };
     res.writeHead(206, head);
     file.pipe(res);
@@ -497,7 +514,7 @@ app.get('/api/welcome-audio', (req, res) => {
       'Content-Length': fileSize,
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'public, max-age=3600',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
     };
     res.writeHead(200, head);
     fs.createReadStream(audioFilePath).pipe(res);
@@ -524,17 +541,51 @@ function saveBase64AudioFile(base64Data: string, originalName?: string): string 
     if (!fs.existsSync(UPLOADS_DIR)) {
       fs.mkdirSync(UPLOADS_DIR, { recursive: true });
     }
-    const match = base64Data.match(/^data:audio\/([a-zA-Z0-9]+);base64,(.+)$/);
-    let buffer: Buffer;
-    let ext = 'mp3';
 
-    if (match) {
-      ext = match[1] === 'mpeg' ? 'mp3' : match[1];
-      buffer = Buffer.from(match[2], 'base64');
-    } else {
-      // Raw base64 string
-      buffer = Buffer.from(base64Data, 'base64');
+    // Remove any previously uploaded voice files to prevent collisions
+    const possibleFiles = [
+      'welcome_voice.mp3',
+      'welcome_voice.m4a',
+      'welcome_voice.wav',
+      'welcome_voice.aac',
+      'welcome_voice.webm',
+      'welcome_voice.ogg',
+    ];
+    for (const f of possibleFiles) {
+      const p = path.join(UPLOADS_DIR, f);
+      if (fs.existsSync(p)) {
+        try {
+          fs.unlinkSync(p);
+        } catch (e) {}
+      }
     }
+
+    let ext = 'mp3';
+    let base64Payload = base64Data;
+
+    // Properly extract clean base64 payload without metadata header
+    const commaIdx = base64Data.indexOf(',');
+    if (commaIdx !== -1) {
+      const header = base64Data.substring(0, commaIdx).toLowerCase();
+      base64Payload = base64Data.substring(commaIdx + 1);
+
+      if (header.includes('wav')) ext = 'wav';
+      else if (header.includes('webm')) ext = 'webm';
+      else if (header.includes('ogg')) ext = 'ogg';
+      else if (header.includes('m4a') || header.includes('mp4') || header.includes('aac')) ext = 'm4a';
+      else ext = 'mp3';
+    }
+
+    if (originalName) {
+      const origExt = path.extname(originalName).replace('.', '').toLowerCase();
+      if (['mp3', 'wav', 'webm', 'ogg', 'm4a', 'aac'].includes(origExt)) {
+        ext = origExt;
+      }
+    }
+
+    // Clean whitespace/newlines
+    base64Payload = base64Payload.replace(/[^A-Za-z0-9+/=]/g, '');
+    const buffer = Buffer.from(base64Payload, 'base64');
 
     const fileName = `welcome_voice.${ext}`;
     const targetPath = path.join(UPLOADS_DIR, fileName);
@@ -542,7 +593,7 @@ function saveBase64AudioFile(base64Data: string, originalName?: string): string 
     return `/api/welcome-audio?t=${Date.now()}`;
   } catch (err) {
     console.error('Error saving audio file to disk:', err);
-    return base64Data; // fallback
+    return base64Data;
   }
 }
 

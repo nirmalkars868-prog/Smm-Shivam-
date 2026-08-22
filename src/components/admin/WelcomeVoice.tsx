@@ -201,51 +201,66 @@ export const WelcomeVoice: React.FC<WelcomeVoiceProps> = ({ settings, onSettings
         return;
       }
 
-      if (audioRef.current) {
-        try {
-          audioRef.current.currentTime = 0;
-          audioRef.current
-            .play()
-            .then(() => {
-              setIsPlaying(true);
-            })
-            .catch(() => {
-              // Graceful fallback to Web Audio chime
-              playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
-              setIsPlaying(true);
-              setStatusMsg({
-                type: 'info',
-                text: 'Audio track could not be decoded. Playing synthesized chime preview.',
-              });
-            });
-        } catch (e) {
+      try {
+        if (audioRef.current) {
+          try {
+            audioRef.current.pause();
+          } catch (e) {}
+        }
+
+        const audio = new Audio();
+        audio.crossOrigin = 'anonymous';
+        audio.src = trimmedUrl;
+        audio.volume = volume;
+        audio.preload = 'auto';
+
+        audio.onplay = () => {
+          setIsPlaying(true);
+          setStatusMsg(null);
+        };
+
+        audio.ontimeupdate = () => {
+          setCurrentTime(audio.currentTime || 0);
+        };
+
+        audio.onloadedmetadata = () => {
+          setDuration(audio.duration || 0);
+          setAudioSourceLoaded(true);
+        };
+
+        audio.onended = () => {
+          setIsPlaying(false);
+          setCurrentTime(0);
+        };
+
+        audio.onerror = (e) => {
+          console.warn('Audio play error, falling back to Web Audio Chime:', e);
           playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
           setIsPlaying(true);
-        }
-      } else {
-        try {
-          const audio = new Audio();
-          audio.src = trimmedUrl;
-          audio.volume = volume;
-          audio.onended = () => setIsPlaying(false);
-          audio
-            .play()
+        };
+
+        audioRef.current = audio;
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise
             .then(() => {
-              audioRef.current = audio;
-              setIsPlaying(true);
-            })
-            .catch(() => {
-              playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
               setIsPlaying(true);
               setStatusMsg({
-                type: 'info',
-                text: 'Audio track format not directly supported. Playing synthesized chime preview.',
+                type: 'success',
+                text: '▶️ Playing audio preview...',
               });
+            })
+            .catch((err) => {
+              console.warn('Audio play promise rejected:', err);
+              playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
+              setIsPlaying(true);
             });
-        } catch (e) {
-          playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
-          setIsPlaying(true);
         }
+      } catch (err) {
+        console.error('Audio initialization error:', err);
+        playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
+        setIsPlaying(true);
       }
     } else {
       // TTS Playback

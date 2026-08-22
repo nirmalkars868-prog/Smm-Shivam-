@@ -88,8 +88,8 @@ export const ManageOrders: React.FC<ManageOrdersProps> = ({ currency }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-medium">
-              {filtered.map((ord) => (
-                <tr key={ord.id} className="hover:bg-slate-800/40 transition-colors">
+              {filtered.map((ord, idx) => (
+                <tr key={ord.id ? `${ord.id}-${idx}` : `ord-${idx}`} className="hover:bg-slate-800/40 transition-colors">
                   <td className="py-3.5 px-4 font-mono font-bold text-slate-300">{ord.id}</td>
                   <td className="py-3.5 px-4 text-slate-400">{ord.userName}</td>
                   <td className="py-3.5 px-4 text-white font-semibold max-w-xs truncate">{ord.serviceName}</td>

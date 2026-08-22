@@ -420,8 +420,8 @@ export const ReferAndEarn: React.FC<ReferAndEarnProps> = ({ currentUser }) => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-900">
-                    {data?.referredUsers?.map((u: any) => (
-                      <tr key={u.id} className="hover:bg-zinc-900/50 transition-colors">
+                    {data?.referredUsers?.map((u: any, idx: number) => (
+                      <tr key={u.id ? `${u.id}-${idx}` : `ref-${idx}`} className="hover:bg-zinc-900/50 transition-colors">
                         <td className="p-3 font-bold text-yellow-400">
                           {u.username}
                           <div className="text-[10px] font-normal text-zinc-500">{u.email}</div>
@@ -598,8 +598,8 @@ export const ReferAndEarn: React.FC<ReferAndEarnProps> = ({ currentUser }) => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-900">
-                    {data?.commissionHistory?.map((c: any) => (
-                      <tr key={c.id} className="hover:bg-zinc-900/50 transition-colors">
+                    {data?.commissionHistory?.map((c: any, idx: number) => (
+                      <tr key={c.id ? `${c.id}-${idx}` : `comm-${idx}`} className="hover:bg-zinc-900/50 transition-colors">
                         <td className="p-3 text-zinc-400">
                           {new Date(c.createdAt).toLocaleDateString('en-IN', {
                             day: 'numeric',
@@ -659,8 +659,8 @@ export const ReferAndEarn: React.FC<ReferAndEarnProps> = ({ currentUser }) => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-900">
-                    {data?.withdrawalHistory?.map((w: any) => (
-                      <tr key={w.id} className="hover:bg-zinc-900/50 transition-colors">
+                    {data?.withdrawalHistory?.map((w: any, idx: number) => (
+                      <tr key={w.id ? `${w.id}-${idx}` : `with-${idx}`} className="hover:bg-zinc-900/50 transition-colors">
                         <td className="p-3 font-mono font-bold text-yellow-400">{w.id}</td>
                         <td className="p-3 text-zinc-400">
                           {new Date(w.requestedAt).toLocaleDateString('en-IN', {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Zap,
   ShoppingBag,
@@ -22,8 +22,18 @@ import {
   RefreshCw,
   Users,
   Gift,
+  Globe,
+  Sliders,
+  Volume2,
 } from 'lucide-react';
 import { User, AdminSettings as AdminSettingsType } from '../types';
+import {
+  subscribeVoicePlayer,
+  startWelcomeSong,
+  pauseWelcomeSong,
+  resumeWelcomeSong,
+  VoicePlayerState,
+} from '../lib/welcomeVoiceEngine';
 
 interface NavbarProps {
   currentTab: string;
@@ -39,6 +49,9 @@ interface NavbarProps {
   settings?: AdminSettingsType;
   onOpenAuth: () => void;
   onLogout: () => void;
+  activePanelSlug?: string | null;
+  onResetToMainPanel?: () => void;
+  onSecretAdminUnlock?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -55,8 +68,69 @@ export const Navbar: React.FC<NavbarProps> = ({
   settings,
   onOpenAuth,
   onLogout,
+  activePanelSlug,
+  onResetToMainPanel,
+  onSecretAdminUnlock,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [audioState, setAudioState] = useState<VoicePlayerState>({
+    isPlaying: false,
+    isPaused: false,
+    hasStarted: false,
+    volume: 0.95,
+    title: '',
+    mode: 'custom_audio',
+    audioUrl: '',
+    currentTime: 0,
+    duration: 0,
+  });
+
+  React.useEffect(() => {
+    const unsub = subscribeVoicePlayer((st) => {
+      setAudioState(st);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleHeaderAudioToggle = () => {
+    if (audioState.isPlaying) {
+      pauseWelcomeSong();
+    } else if (audioState.isPaused) {
+      resumeWelcomeSong();
+    } else {
+      startWelcomeSong({
+        enabled: settings?.welcomeVoiceEnabled !== false,
+        audioUrl: settings?.welcomeVoiceUrl || '',
+        text: settings?.welcomeVoiceText || 'WELCOME TO SMM SHIVAM OFFICIAL',
+        volume: settings?.welcomeVoiceVolume !== undefined ? settings.welcomeVoiceVolume : 0.95,
+        mode: settings?.welcomeVoiceMode || (settings?.welcomeVoiceUrl ? 'custom_audio' : 'tts_speech'),
+        name: settings?.welcomeVoiceName || 'SMM SHIVAM Official Audio',
+      });
+    }
+  };
+
+  const navTapCountRef = useRef(0);
+  const lastNavTapTimeRef = useRef(0);
+
+  const handleNavLogoTap = () => {
+    const now = Date.now();
+    if (now - lastNavTapTimeRef.current > 4000) {
+      navTapCountRef.current = 1;
+    } else {
+      navTapCountRef.current += 1;
+    }
+    lastNavTapTimeRef.current = now;
+
+    if (navTapCountRef.current >= 7) {
+      navTapCountRef.current = 0;
+      if (onSecretAdminUnlock) {
+        onSecretAdminUnlock();
+      } else {
+        setIsAdmin(true);
+        setCurrentTab('admin-overview');
+      }
+    }
+  };
 
   interface NavItem {
     id: string;
@@ -67,6 +141,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const userNavItems: NavItem[] = [
     { id: 'new-order', label: 'New order', icon: ShoppingBag },
+    { id: 'buy-child-panel', label: 'Buy Child Panel', icon: Globe, badge: '🔥 RESELLER' },
     { id: 'add-funds', label: 'Add funds (QR UPI)', icon: QrCode, badge: 'AUTO' },
     { id: 'referrals', label: 'Refer & Earn', icon: Gift, badge: 'PASSIVE ₹' },
     { id: 'mass-order', label: 'Mass order', icon: Layers },
@@ -79,12 +154,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const adminNavItems: NavItem[] = [
     { id: 'admin-overview', label: 'Overview', icon: Zap },
+    { id: 'admin-child-panels', label: 'Child Panels (White-Label)', icon: Globe, badge: 'RESELLER' },
+    { id: 'admin-tickets', label: 'Support Tickets', icon: MessageSquare, badge: 'LIVE' },
     { id: 'admin-referrals', label: 'Referrals & Withdrawals', icon: Gift, badge: 'NEW' },
     { id: 'admin-providers', label: 'API Providers', icon: Code2 },
     { id: 'admin-services', label: 'Manage Services', icon: ListFilter },
     { id: 'admin-orders', label: 'Manage Orders', icon: History },
     { id: 'admin-deposits', label: 'Approve Fund Requests', icon: QrCode, badge: 'NEW' },
     { id: 'admin-users', label: 'Users & Passwords', icon: Users },
+    { id: 'admin-welcome-voice', label: 'Welcome Voice', icon: Volume2, badge: 'AUDIO' },
     { id: 'admin-logs', label: 'Sync Logs', icon: Bell },
     { id: 'admin-settings', label: 'Admin Settings', icon: Settings },
   ];
@@ -100,15 +178,17 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-3">
           {/* Brand Logo */}
-          <button
-            onClick={() => setCurrentTab(isAdmin ? 'admin-overview' : 'new-order')}
-            className="flex items-center gap-2 text-left group focus:outline-none cursor-pointer flex-shrink-0"
+          <div
+            onClick={(e) => {
+              handleNavLogoTap();
+            }}
+            className="flex items-center gap-2 text-left group focus:outline-none cursor-pointer flex-shrink-0 select-none"
           >
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-yellow-500 via-amber-400 to-yellow-300 flex items-center justify-center text-black shadow-lg shadow-yellow-500/30 group-hover:scale-105 transition-transform font-black border border-yellow-300 flex-shrink-0 overflow-hidden">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-yellow-500 via-amber-400 to-yellow-300 flex items-center justify-center text-black shadow-lg shadow-yellow-500/30 group-hover:scale-105 transition-transform font-black border border-yellow-300 flex-shrink-0 overflow-hidden active:scale-95">
               {settings?.logoUrl ? (
-                <img src={settings.logoUrl} alt={settings.siteName || 'Logo'} className="w-full h-full object-cover" />
+                <img src={settings.logoUrl} alt={settings.siteName || 'Logo'} className="w-full h-full object-cover pointer-events-none" />
               ) : (
-                <Zap className="w-5 h-5 fill-black text-black" />
+                <Zap className="w-5 h-5 fill-black text-black pointer-events-none" />
               )}
             </div>
             <div className="flex-shrink-0">
@@ -120,10 +200,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>{isAdmin ? 'ADMIN PANEL' : 'ONLINE PANEL'}</span>
               </div>
             </div>
-          </button>
+          </div>
 
           {/* Header Right Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Active White-Label Indicator if viewing a Child Panel */}
+            {activePanelSlug && (
+              <div className="hidden md:flex items-center gap-2 bg-sky-500/10 border border-sky-500/30 rounded-xl px-2.5 py-1 text-xs text-sky-300">
+                <Globe className="w-3.5 h-3.5 text-sky-400 animate-pulse" />
+                <span className="font-bold">Child Panel: <span className="font-mono text-white">{activePanelSlug}</span></span>
+                {onResetToMainPanel && (
+                  <button
+                    onClick={onResetToMainPanel}
+                    className="ml-1 px-1.5 py-0.5 rounded bg-sky-500 text-black font-black text-[9px] hover:bg-sky-400"
+                    title="Return to Main Admin Panel"
+                  >
+                    MAIN ADMIN
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Balance Badge */}
             <div className="flex items-center gap-2 bg-zinc-900 border border-yellow-500/30 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-inner">
               <Wallet className="w-4 h-4 text-yellow-400 shrink-0" />
@@ -144,6 +241,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <option value="USD">$ USD</option>
               </select>
             </div>
+
+            {/* Quick Audio / Music Header Toggle */}
+            {settings?.welcomeVoiceEnabled !== false && (
+              <button
+                onClick={handleHeaderAudioToggle}
+                className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
+                  audioState.isPlaying
+                    ? 'bg-yellow-500/20 border-yellow-400 text-yellow-400 shadow-md shadow-yellow-500/20'
+                    : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-yellow-400 hover:border-yellow-500/30'
+                }`}
+                title={audioState.isPlaying ? 'Pause Background Music' : 'Play Welcome Song'}
+              >
+                {audioState.isPlaying ? (
+                  <>
+                    <Volume2 className="w-4 h-4 text-yellow-400 animate-pulse" />
+                    <span className="hidden sm:inline text-[11px]">Song ON</span>
+                  </>
+                ) : (
+                  <Volume2 className="w-4 h-4" />
+                )}
+              </button>
+            )}
 
             {/* Hamburger Menu Toggle Button (Match SMMDIP.COM style) */}
             <button

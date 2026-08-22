@@ -8,6 +8,14 @@ let rtdbWriteDisabled = false;
 import {
   AdminSettings,
   Category,
+  ChildPanel,
+  ChildPanelApiSettings,
+  ChildPanelBranding,
+  ChildPanelContact,
+  ChildPanelPayment,
+  ChildPanelPermissions,
+  ChildPanelPricing,
+  ChildPanelPurchaseRequest,
   DepositRequest,
   Order,
   Provider,
@@ -34,6 +42,8 @@ interface DatabaseSchema {
   depositRequests: DepositRequest[];
   referralCommissions?: ReferralCommission[];
   referralWithdrawals?: ReferralWithdrawal[];
+  childPanels?: ChildPanel[];
+  childPanelRequests?: ChildPanelPurchaseRequest[];
   settings: AdminSettings;
 }
 
@@ -53,19 +63,42 @@ const defaultSettings: AdminSettings = {
   whatsappChannelUrl: 'https://whatsapp.com/channel/smm_shivam_official',
   telegramUrl: 'https://t.me/smm_shivam_official',
   youtubeUrl: 'https://youtube.com/@smmshivam',
-  youtubeSubscribersText: '154K Subscribe',
+  youtubeSubscribersText: 'YouTube Subscribe',
   upiId: '9770571091@ybl',
   merchantId: 'SHIVAM_MERCHANT_9770',
   merchantSecret: process.env.MERCHANT_SECRET || '',
   autoVerifyMerchant: true,
   minDepositINR: 10,
   exchangeRateINR: 86,
+  childPanelPriceINR: 499,
+  childPanelDescription: 'Start your own automated SMM panel business with instant white-label branding, your own UPI payment QR, custom domain & /panel/slug access.',
+  childPanelAdminMarginPercentage: 15,
+  childPanelDefaultOwnerMarginPercentage: 25,
+  childPanelMinMarginPercentage: 5,
+  childPanelMaxMarginPercentage: 300,
   notice: '⚡ Welcome to SMM SHIVAM Panel! Scan QR Code to add funds instantly via UPI & WhatsApp auto-verification.',
+  popupNoticeEnabled: true,
+  popupNoticeTitle: '🔥 SPECIAL ANNOUNCEMENT & OFFER',
+  popupNoticeText: 'Welcome to SMM SHIVAM Panel! Get extra bonuses on UPI Add Funds, lightning fast server speeds, and 24/7 WhatsApp customer support.',
+  popupNoticeType: 'offer',
+  popupNoticeButtonText: 'Add Funds Now',
+  popupNoticeButtonLink: '#add-funds',
+  topAlertBarEnabled: true,
+  topAlertBarText: '⚡ SMM SHIVAM: Instant UPI Deposits Live | WhatsApp Support: +91 9516862495 | Best High-Speed SMM Services!',
+  defaultProfitMarginPercentage: 20,
   currency: 'USD',
   currencySymbol: '$',
   theme: 'default-dark',
   snowEffect: false,
   referralSettings: defaultReferralSettings,
+  // Welcome Voice default settings
+  welcomeVoiceEnabled: true,
+  welcomeVoiceUrl: '',
+  welcomeVoiceName: '',
+  welcomeVoiceText: 'WELCOME TO SMM SHIVAM OFFICIAL',
+  welcomeVoiceVolume: 0.9,
+  welcomeVoicePlayOnReload: true,
+  welcomeVoiceMode: 'tts_speech',
 };
 
 // Initial Seed Data
@@ -256,7 +289,7 @@ const defaultUsers: User[] = [
     username: 'yourshivamff_',
     email: 'admin@smmshivam.com',
     whatsappNo: '919516862495',
-    balance: 500.00,
+    balance: 500.0,
     totalSpent: 0,
     role: 'admin',
     apiKey: 'usr_api_key_88f910a2b',
@@ -267,6 +300,112 @@ const defaultUsers: User[] = [
     totalReferralWithdrawn: 0,
     referralEligible: true,
     createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'usr-child-owner-1',
+    username: 'abcdigital_owner',
+    email: 'owner@abcdigital.com',
+    whatsappNo: '919876543210',
+    password: 'abcownerpassword123',
+    balance: 1250.0,
+    totalSpent: 3640.0,
+    role: 'child_owner',
+    childPanelId: 'cp-abc101',
+    apiKey: 'cp_owner_api_key_abc77',
+    status: 'active',
+    referralCode: 'ABCOWN01',
+    referralBalance: 0,
+    totalReferralEarnings: 0,
+    totalReferralWithdrawn: 0,
+    referralEligible: true,
+    createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
+  },
+  {
+    id: 'usr-child-customer-1',
+    username: 'rohit_customer',
+    email: 'rohit@gmail.com',
+    whatsappNo: '919123456780',
+    password: 'customerpass123',
+    balance: 340.0,
+    totalSpent: 1200.0,
+    role: 'user',
+    childPanelId: 'cp-abc101',
+    apiKey: 'usr_cp_cust_881',
+    status: 'active',
+    referralCode: 'ROHIT01',
+    referralBalance: 0,
+    totalReferralEarnings: 0,
+    totalReferralWithdrawn: 0,
+    referralEligible: true,
+    createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+  },
+];
+
+const defaultChildPanels: ChildPanel[] = [
+  {
+    id: 'cp-abc101',
+    name: 'ABC DIGITAL SMM',
+    slug: 'abc',
+    subdomain: 'abc.smmshivam.com',
+    customDomain: 'www.abcdigitalsmm.com',
+    ownerId: 'usr-child-owner-1',
+    ownerName: 'Rahul Verma (ABC Digital)',
+    ownerEmail: 'owner@abcdigital.com',
+    ownerPassword: 'abcownerpassword123',
+    ownerWhatsapp: '919876543210',
+    status: 'active',
+    permissions: {
+      brandingCustomization: true,
+      apiAccess: true,
+      pricingCustomization: true,
+      paymentCustomization: true,
+      categoryServiceSelection: true,
+    },
+    branding: {
+      panelName: 'ABC DIGITAL SMM',
+      logoUrl: '',
+      faviconUrl: '',
+      theme: 'cyberpunk-neon',
+      accentColor: '#38bdf8',
+      loginPageTitle: 'ABC Digital SMM - Wholesale Social Panel',
+      footerText: '© 2026 ABC Digital SMM. All rights reserved.',
+    },
+    contact: {
+      whatsappNumber: '919876543210',
+      supportWhatsapp: '919876543210',
+      supportEmail: 'support@abcdigital.com',
+      supportTelegram: 'https://t.me/abcdigital_support',
+      contactNumber: '+91 98765 43210',
+      supportMessage: '⚡ ABC DIGITAL 24x7 Customer Support. Instant response via WhatsApp!',
+    },
+    payment: {
+      upiId: 'abcdigital@upi',
+      upiName: 'ABC DIGITAL SMM',
+      qrCodeUrl: '',
+      minDepositINR: 50,
+      instructions: 'Pay using any UPI app (GPay / PhonePe / Paytm) and enter the 12-digit UTR number.',
+    },
+    pricing: {
+      defaultMarginPercent: 30, // 30% markup on top of Main Admin price
+      minAllowedMarginPercent: 10,
+      maxAllowedMarginPercent: 300,
+      serviceCustomPrices: {},
+    },
+    apiSettings: {
+      useMainAdminApi: true,
+      apiProviderName: 'Main SMM API Proxy',
+      apiUrl: 'https://smmshivam.com/api/v2',
+      apiKey: 'sec_cp_abc_99281x',
+      status: 'connected',
+      lastTestedAt: new Date().toISOString(),
+    },
+    allowedCategoryIds: [],
+    allowedServiceIds: [],
+    walletBalance: 1250.0,
+    totalRevenueINR: 4890.0,
+    totalOrdersCount: 28,
+    createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
+    updatedAt: new Date().toISOString(),
   },
 ];
 
@@ -296,11 +435,22 @@ function cleanForFirebase(obj: any): any {
 
 function ensureArray<T>(data: any): T[] {
   if (!data) return [];
-  if (Array.isArray(data)) return data.filter(Boolean);
-  if (typeof data === 'object') {
-    return Object.values(data).filter(Boolean) as T[];
+  let arr: T[] = [];
+  if (Array.isArray(data)) {
+    arr = data.filter(Boolean);
+  } else if (typeof data === 'object') {
+    arr = Object.values(data).filter(Boolean) as T[];
   }
-  return [];
+  const map = new Map<string, T>();
+  const withoutId: T[] = [];
+  for (const item of arr) {
+    if (item && typeof item === 'object' && 'id' in item && (item as any).id) {
+      map.set(String((item as any).id), item);
+    } else {
+      withoutId.push(item);
+    }
+  }
+  return Array.from(map.values()).concat(withoutId);
 }
 
 class DatabaseStore {
@@ -318,6 +468,8 @@ class DatabaseStore {
       serviceUpdates: [],
       tickets: [],
       depositRequests: [],
+      childPanels: defaultChildPanels,
+      childPanelRequests: [],
       settings: defaultSettings,
     };
 
@@ -364,6 +516,12 @@ class DatabaseStore {
           if (parsed.referralWithdrawals && Array.isArray(parsed.referralWithdrawals)) {
             this.memoryDb.referralWithdrawals = parsed.referralWithdrawals;
           }
+          if (parsed.childPanels && Array.isArray(parsed.childPanels) && parsed.childPanels.length > 0) {
+            this.memoryDb.childPanels = parsed.childPanels;
+          }
+          if (parsed.childPanelRequests && Array.isArray(parsed.childPanelRequests)) {
+            this.memoryDb.childPanelRequests = parsed.childPanelRequests;
+          }
           if (parsed.settings) {
             this.memoryDb.settings = {
               ...defaultSettings,
@@ -382,10 +540,55 @@ class DatabaseStore {
     }
   }
 
+  private static RTDB_REST_URL = 'https://smm-shivam-2-default-rtdb.firebaseio.com';
+
+  private async fetchCloudRtdbData(): Promise<void> {
+    try {
+      const res = await fetch(`${DatabaseStore.RTDB_REST_URL}/smm_store.json`);
+      if (res.ok) {
+        const parsed = await res.json();
+        if (parsed && typeof parsed === 'object') {
+          console.log('⚡ Successfully fetched persistent cloud database from Firebase RTDB REST API');
+          if (parsed.providers) this.memoryDb.providers = ensureArray<Provider>(parsed.providers);
+          if (parsed.categories) this.memoryDb.categories = ensureArray<Category>(parsed.categories);
+          if (parsed.services) this.memoryDb.services = ensureArray<Service>(parsed.services);
+          if (parsed.orders) this.memoryDb.orders = ensureArray<Order>(parsed.orders);
+          if (parsed.users) this.memoryDb.users = ensureArray<User>(parsed.users);
+          if (parsed.syncLogs) this.memoryDb.syncLogs = ensureArray<SyncLog>(parsed.syncLogs);
+          if (parsed.serviceUpdates) this.memoryDb.serviceUpdates = ensureArray<ServiceUpdateLog>(parsed.serviceUpdates);
+          if (parsed.tickets) this.memoryDb.tickets = ensureArray<Ticket>(parsed.tickets);
+          if (parsed.depositRequests) this.memoryDb.depositRequests = ensureArray<DepositRequest>(parsed.depositRequests);
+          if (parsed.referralCommissions) this.memoryDb.referralCommissions = ensureArray<ReferralCommission>(parsed.referralCommissions);
+          if (parsed.referralWithdrawals) this.memoryDb.referralWithdrawals = ensureArray<ReferralWithdrawal>(parsed.referralWithdrawals);
+          if (parsed.childPanels) this.memoryDb.childPanels = ensureArray<ChildPanel>(parsed.childPanels);
+          if (parsed.childPanelRequests) this.memoryDb.childPanelRequests = ensureArray<ChildPanelPurchaseRequest>(parsed.childPanelRequests);
+          if (parsed.settings) {
+            this.memoryDb.settings = {
+              ...defaultSettings,
+              ...parsed.settings,
+              referralSettings: {
+                ...defaultReferralSettings,
+                ...((parsed.settings && parsed.settings.referralSettings) || {}),
+              },
+            };
+          }
+          this.cleanEmptyCategories();
+          this.ensureAdminUserCredentials();
+          this.saveToDisk();
+        }
+      }
+    } catch (err) {
+      console.warn('Firebase RTDB REST initial fetch warning:', err);
+    }
+  }
+
   private initRtdbStore() {
     this.cleanEmptyCategories();
     this.sanitizeUsersReferralCodes();
     this.ensureAdminUserCredentials();
+
+    // 1. Immediately fetch persistent cloud data via REST
+    this.fetchCloudRtdbData();
 
     if (rtdb) {
       const storeRef = ref(rtdb, 'smm_store');
@@ -394,7 +597,7 @@ class DatabaseStore {
           if (snapshot.exists()) {
             const parsed = snapshot.val();
             if (parsed) {
-              console.log('⚡ Loaded store data from Firebase Realtime Database');
+              console.log('⚡ Loaded store data from Firebase Realtime Database SDK');
               if (parsed.providers) this.memoryDb.providers = ensureArray<Provider>(parsed.providers);
               if (parsed.categories) this.memoryDb.categories = ensureArray<Category>(parsed.categories);
               if (parsed.services) this.memoryDb.services = ensureArray<Service>(parsed.services);
@@ -406,6 +609,8 @@ class DatabaseStore {
               if (parsed.depositRequests) this.memoryDb.depositRequests = ensureArray<DepositRequest>(parsed.depositRequests);
               if (parsed.referralCommissions) this.memoryDb.referralCommissions = ensureArray<ReferralCommission>(parsed.referralCommissions);
               if (parsed.referralWithdrawals) this.memoryDb.referralWithdrawals = ensureArray<ReferralWithdrawal>(parsed.referralWithdrawals);
+              if (parsed.childPanels) this.memoryDb.childPanels = ensureArray<ChildPanel>(parsed.childPanels);
+              if (parsed.childPanelRequests) this.memoryDb.childPanelRequests = ensureArray<ChildPanelPurchaseRequest>(parsed.childPanelRequests);
               if (parsed.settings) {
                 this.memoryDb.settings = {
                   ...defaultSettings,
@@ -416,6 +621,7 @@ class DatabaseStore {
                   },
                 };
               }
+              this.cleanEmptyCategories();
               this.ensureAdminUserCredentials();
               this.saveToDisk();
             }
@@ -435,9 +641,12 @@ class DatabaseStore {
               if (parsed.services) this.memoryDb.services = ensureArray<Service>(parsed.services);
               if (parsed.orders) this.memoryDb.orders = ensureArray<Order>(parsed.orders);
               if (parsed.users) this.memoryDb.users = ensureArray<User>(parsed.users);
+              if (parsed.tickets) this.memoryDb.tickets = ensureArray<Ticket>(parsed.tickets);
               if (parsed.depositRequests) this.memoryDb.depositRequests = ensureArray<DepositRequest>(parsed.depositRequests);
               if (parsed.referralCommissions) this.memoryDb.referralCommissions = ensureArray<ReferralCommission>(parsed.referralCommissions);
               if (parsed.referralWithdrawals) this.memoryDb.referralWithdrawals = ensureArray<ReferralWithdrawal>(parsed.referralWithdrawals);
+              if (parsed.childPanels) this.memoryDb.childPanels = ensureArray<ChildPanel>(parsed.childPanels);
+              if (parsed.childPanelRequests) this.memoryDb.childPanelRequests = ensureArray<ChildPanelPurchaseRequest>(parsed.childPanelRequests);
               if (parsed.settings) {
                 this.memoryDb.settings = {
                   ...defaultSettings,
@@ -458,7 +667,36 @@ class DatabaseStore {
     }
   }
 
+  private sanitizeAndDeduplicateUsers() {
+    if (!this.memoryDb.users || !Array.isArray(this.memoryDb.users)) {
+      this.memoryDb.users = defaultUsers;
+      return;
+    }
+    const deduped: User[] = [];
+    const seenIds = new Set<string>();
+    const seenEmails = new Set<string>();
+    const seenUids = new Set<string>();
+
+    for (const u of this.memoryDb.users) {
+      if (!u) continue;
+      const id = u.id ? String(u.id).trim() : '';
+      const email = u.email ? String(u.email).toLowerCase().trim() : '';
+      const uid = u.firebaseUid ? String(u.firebaseUid).trim() : '';
+
+      if (id && seenIds.has(id)) continue;
+      if (email && seenEmails.has(email)) continue;
+      if (uid && seenUids.has(uid)) continue;
+
+      if (id) seenIds.add(id);
+      if (email) seenEmails.add(email);
+      if (uid) seenUids.add(uid);
+      deduped.push(u);
+    }
+    this.memoryDb.users = deduped;
+  }
+
   private ensureAdminUserCredentials() {
+    this.sanitizeAndDeduplicateUsers();
     let admin = this.memoryDb.users.find(
       (u) => u.role === 'admin' || u.id === 'usr-admin' || u.username === 'admin' || u.username === 'yourshivamff_'
     );
@@ -467,7 +705,8 @@ class DatabaseStore {
       admin.role = 'admin';
       admin.status = 'active';
       admin.referralCode = 'ADMIN09';
-      delete (admin as any).password;
+      admin.email = admin.email || 'admin@smmshivam.com';
+      admin.whatsappNo = admin.whatsappNo || '919516862495';
     } else {
       admin = {
         id: 'usr-admin',
@@ -492,9 +731,45 @@ class DatabaseStore {
 
   private syncToRtdb() {
     this.saveToDisk();
+    const sanitized = cleanForFirebase(this.sanitizeDbForRtdb(this.memoryDb));
+
+    // Cloud REST Sync (Guarantees persistence across server restarts / Render deployments)
+    try {
+      fetch(`${DatabaseStore.RTDB_REST_URL}/smm_store.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sanitized),
+      }).catch(() => {});
+
+      if (this.memoryDb.services && this.memoryDb.services.length > 0) {
+        fetch(`${DatabaseStore.RTDB_REST_URL}/services.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cleanForFirebase(this.memoryDb.services)),
+        }).catch(() => {});
+      }
+
+      if (this.memoryDb.categories && this.memoryDb.categories.length > 0) {
+        fetch(`${DatabaseStore.RTDB_REST_URL}/categories.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cleanForFirebase(this.memoryDb.categories)),
+        }).catch(() => {});
+      }
+
+      if (this.memoryDb.settings) {
+        fetch(`${DatabaseStore.RTDB_REST_URL}/settings.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cleanForFirebase(this.memoryDb.settings)),
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('REST cloud sync notice:', err);
+    }
+
     if (rtdb) {
       try {
-        const sanitized = cleanForFirebase(this.sanitizeDbForRtdb(this.memoryDb));
         set(ref(rtdb, 'smm_store'), sanitized).catch((err) => {
           const msg = String(err?.message || err);
           if (err?.code !== 'PERMISSION_DENIED' && !msg.toLowerCase().includes('permission_denied')) {
@@ -516,33 +791,31 @@ class DatabaseStore {
   }
 
   private syncUserToRtdb(user: User) {
-    if (rtdb && user) {
+    if (user) {
       try {
-        const currentUser = serverAuth?.currentUser;
-        if (!currentUser) return;
-
-        // Non-admin clients can only write to their own users/$uid node
-        const isSelf = currentUser.uid === user.id || currentUser.uid === user.firebaseUid;
-        const isAdmin = currentUser.email === 'shivamnirmalkar26@gmail.com';
-        if (!isSelf && !isAdmin) return;
-
         const cleanUser = cleanForFirebase(user);
-        delete cleanUser.password;
         if (user.id) {
-          set(ref(rtdb, `users/${user.id}`), cleanUser).catch((e) => {
-            const msg = String(e?.message || e);
-            if (!msg.toLowerCase().includes('permission_denied')) {
-              console.warn('RTDB user node write warning:', msg);
-            }
-          });
+          fetch(`${DatabaseStore.RTDB_REST_URL}/users/${encodeURIComponent(user.id)}.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cleanUser),
+          }).catch(() => {});
         }
         if (user.firebaseUid && user.firebaseUid !== user.id) {
-          set(ref(rtdb, `users/${user.firebaseUid}`), cleanUser).catch((e) => {
-            const msg = String(e?.message || e);
-            if (!msg.toLowerCase().includes('permission_denied')) {
-              console.warn('RTDB user node write warning:', msg);
-            }
-          });
+          fetch(`${DatabaseStore.RTDB_REST_URL}/users/${encodeURIComponent(user.firebaseUid)}.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cleanUser),
+          }).catch(() => {});
+        }
+
+        if (rtdb) {
+          if (user.id) {
+            set(ref(rtdb, `users/${user.id}`), cleanUser).catch(() => {});
+          }
+          if (user.firebaseUid && user.firebaseUid !== user.id) {
+            set(ref(rtdb, `users/${user.firebaseUid}`), cleanUser).catch(() => {});
+          }
         }
       } catch (err) {
         console.warn('syncUserToRtdb exception:', err);
@@ -551,14 +824,9 @@ class DatabaseStore {
   }
 
   private sanitizeDbForRtdb(db: DatabaseSchema): any {
-    const cleanUsers = (db.users || []).map((user) => {
-      const copy = { ...user };
-      delete (copy as any).password;
-      return copy;
-    });
     return {
       ...db,
-      users: cleanUsers,
+      users: db.users || [],
     };
   }
 
@@ -647,37 +915,12 @@ class DatabaseStore {
 
   // --- CATEGORIES ---
   cleanEmptyCategories(): Category[] {
-    const catMap = new Map<string, Category>();
-    this.memoryDb.categories.forEach((c) => {
-      if (c && c.name) catMap.set(c.name.trim().toLowerCase(), c);
-    });
-
-    // Auto-create category object for every active service
+    // Preserve all categories added by admin or active services
     this.memoryDb.services.forEach((s) => {
       if (s.status === 'active' && s.category) {
-        const key = s.category.trim().toLowerCase();
-        if (!catMap.has(key)) {
-          const newCat: Category = {
-            id: 'cat-' + key.replace(/[^a-z0-9]/g, '-'),
-            name: s.category.trim(),
-            sortOrder: this.memoryDb.categories.length + 1,
-          };
-          this.memoryDb.categories.push(newCat);
-          catMap.set(key, newCat);
-        }
+        this.findOrCreateCategory(s.category);
       }
     });
-
-    const usedCategories = new Set(
-      this.memoryDb.services
-        .filter((s) => s.status === 'active')
-        .map((s) => s.category.trim().toLowerCase())
-    );
-
-    this.memoryDb.categories = this.memoryDb.categories.filter((c) =>
-      usedCategories.has(c.name.trim().toLowerCase())
-    );
-
     this.syncToRtdb();
     return this.memoryDb.categories;
   }
@@ -710,18 +953,12 @@ class DatabaseStore {
       this.syncToRtdb();
     }
 
-    const usedCategories = new Set(
-      this.memoryDb.services
-        .filter((s) => s.status === 'active')
-        .map((s) => s.category.trim().toLowerCase())
-    );
-
     return this.memoryDb.categories
-      .filter((c) => usedCategories.has(c.name.trim().toLowerCase()))
+      .filter((c) => c && c.name && c.name.trim())
       .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   }
 
-  findOrCreateCategory(categoryName: string): Category {
+  findOrCreateCategory(categoryName: string, icon?: string): Category {
     const cleanName = (categoryName || 'General Services').trim();
     let found = this.memoryDb.categories.find(
       (c) => c.name.toLowerCase() === cleanName.toLowerCase()
@@ -730,12 +967,23 @@ class DatabaseStore {
       found = {
         id: 'cat-' + cleanName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
         name: cleanName,
+        icon: icon || 'Tag',
         sortOrder: this.memoryDb.categories.length + 1,
       };
       this.memoryDb.categories.push(found);
       this.syncToRtdb();
     }
     return found;
+  }
+
+  deleteCategory(id: string): boolean {
+    const idx = this.memoryDb.categories.findIndex((c) => c.id === id);
+    if (idx >= 0) {
+      this.memoryDb.categories.splice(idx, 1);
+      this.syncToRtdb();
+      return true;
+    }
+    return false;
   }
 
   // --- SERVICES ---
@@ -861,14 +1109,16 @@ class DatabaseStore {
     return Number(rateWithMarkup.toFixed(4));
   }
 
-  updateBulkProfitMargin(marginPercentage: number): { updatedCount: number; marginPercentage: number } {
+  updateBulkProfitMargin(marginPercentage: number, category?: string): { updatedCount: number; marginPercentage: number } {
     const margin = Number(marginPercentage) || 0;
     let updatedCount = 0;
 
     this.memoryDb.services.forEach((service) => {
-      service.sellingRate = this.calculateSellingRate(service.providerRate, margin);
-      service.updatedAt = new Date().toISOString();
-      updatedCount++;
+      if (!category || category === 'ALL' || service.category === category) {
+        service.sellingRate = this.calculateSellingRate(service.providerRate, margin);
+        service.updatedAt = new Date().toISOString();
+        updatedCount++;
+      }
     });
 
     // Recalculate existing order selling prices and profits to reflect new configured profit margin
@@ -885,6 +1135,7 @@ class DatabaseStore {
     });
 
     this.memoryDb.settings.defaultProfitMarginPercentage = margin;
+    this.saveToDisk();
     this.syncToRtdb();
 
     return { updatedCount, marginPercentage: margin };
@@ -944,25 +1195,56 @@ class DatabaseStore {
 
   saveUser(userProfile: User): User {
     const copy = { ...userProfile };
-    delete (copy as any).password;
+    const cleanId = copy.id ? String(copy.id).trim() : '';
+    const cleanEmail = copy.email ? String(copy.email).toLowerCase().trim() : '';
+    const cleanUid = copy.firebaseUid ? String(copy.firebaseUid).trim() : '';
+
     const existingIndex = this.memoryDb.users.findIndex(
-      (u) => u.id === copy.id || (u.email && u.email.toLowerCase() === copy.email.toLowerCase())
+      (u) =>
+        (cleanId && u.id === cleanId) ||
+        (cleanUid && (u.firebaseUid === cleanUid || u.id === cleanUid)) ||
+        (cleanId && u.firebaseUid === cleanId) ||
+        (cleanEmail && u.email && u.email.toLowerCase().trim() === cleanEmail)
     );
     if (existingIndex >= 0) {
+      const existing = this.memoryDb.users[existingIndex];
       const merged = {
-        ...this.memoryDb.users[existingIndex],
+        ...existing,
         ...copy,
+        id: existing.id || copy.id,
+        firebaseUid: copy.firebaseUid || existing.firebaseUid || (copy.id && copy.id.length > 20 ? copy.id : existing.id),
+        password: copy.password || existing.password || '',
+        whatsappNo: copy.whatsappNo || existing.whatsappNo || '',
+        createdAt: existing.createdAt || copy.createdAt || new Date().toISOString(),
       };
       this.memoryDb.users[existingIndex] = merged;
+      this.sanitizeAndDeduplicateUsers();
+      this.saveToDisk();
       this.syncToRtdb();
       this.syncUserToRtdb(merged);
       return merged;
     } else {
+      if (!copy.createdAt) {
+        copy.createdAt = new Date().toISOString();
+      }
       this.memoryDb.users.push(copy);
+      this.sanitizeAndDeduplicateUsers();
+      this.saveToDisk();
       this.syncToRtdb();
       this.syncUserToRtdb(copy);
       return copy;
     }
+  }
+
+  updateUserPassword(userId: string, newPassword: string): User | undefined {
+    const user = this.getUser(userId);
+    if (user && newPassword && newPassword.trim()) {
+      user.password = newPassword.trim();
+      this.saveToDisk();
+      this.syncToRtdb();
+      this.syncUserToRtdb(user);
+    }
+    return user;
   }
 
   deductUserBalance(userId: string, amount: number): boolean {
@@ -1861,6 +2143,1148 @@ class DatabaseStore {
     }
     return deposit;
   }
+  // --- SUPPORT TICKETS SYSTEM ---
+  getTickets(): Ticket[] {
+    return this.memoryDb.tickets || [];
+  }
+
+  getUserTickets(userId: string): Ticket[] {
+    if (!this.memoryDb.tickets) return [];
+    return this.memoryDb.tickets.filter((t) => t.userId === userId);
+  }
+
+  getTicket(id: string): Ticket | undefined {
+    if (!this.memoryDb.tickets) return undefined;
+    return this.memoryDb.tickets.find((t) => t.id === id);
+  }
+
+  createTicket(data: {
+    userId: string;
+    username: string;
+    userEmail?: string;
+    whatsappNo?: string;
+    subject: string;
+    orderId?: string;
+    message: string;
+  }): Ticket {
+    if (!this.memoryDb.tickets) {
+      this.memoryDb.tickets = [];
+    }
+
+    const user = this.getUser(data.userId);
+    const id = 'TCK-' + Math.floor(100000 + Math.random() * 900000);
+    const now = new Date().toISOString();
+
+    const ticket: Ticket = {
+      id,
+      userId: data.userId,
+      username: data.username || (user ? user.username : 'User'),
+      userEmail: data.userEmail || (user ? user.email : ''),
+      whatsappNo: data.whatsappNo || (user ? user.whatsappNo : ''),
+      subject: data.subject || 'Support Request',
+      orderId: data.orderId || '',
+      status: 'Open',
+      messages: [
+        {
+          sender: 'user',
+          text: data.message,
+          timestamp: now,
+        },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.memoryDb.tickets.unshift(ticket);
+    this.syncToRtdb();
+
+    if (rtdb) {
+      try {
+        const cleanTicket = cleanForFirebase(ticket);
+        set(ref(rtdb, `smm_store/tickets/${id}`), cleanTicket).catch(() => {});
+        set(ref(rtdb, `tickets/${id}`), cleanTicket).catch(() => {});
+      } catch (err) {
+        console.warn('store.ts createTicket RTDB notice:', err);
+      }
+    }
+
+    return ticket;
+  }
+
+  replyTicket(
+    ticketId: string,
+    sender: 'user' | 'admin',
+    text: string
+  ): { ticket?: Ticket; error?: string } {
+    if (!this.memoryDb.tickets) return { error: 'No tickets found' };
+    const ticket = this.memoryDb.tickets.find((t) => t.id === ticketId);
+    if (!ticket) return { error: 'Ticket not found' };
+
+    const cleanText = (text || '').trim();
+    if (!cleanText) return { error: 'Message cannot be empty' };
+
+    const now = new Date().toISOString();
+    ticket.messages.push({
+      sender,
+      text: cleanText,
+      timestamp: now,
+    });
+    ticket.updatedAt = now;
+
+    if (sender === 'admin') {
+      ticket.status = 'Answered';
+    } else {
+      ticket.status = 'Open';
+    }
+
+    this.syncToRtdb();
+
+    if (rtdb) {
+      try {
+        const cleanTicket = cleanForFirebase(ticket);
+        set(ref(rtdb, `smm_store/tickets/${ticketId}`), cleanTicket).catch(() => {});
+        set(ref(rtdb, `tickets/${ticketId}`), cleanTicket).catch(() => {});
+      } catch (err) {
+        console.warn('store.ts replyTicket RTDB notice:', err);
+      }
+    }
+
+    return { ticket };
+  }
+
+  updateTicketStatus(
+    ticketId: string,
+    status: 'Open' | 'In Progress' | 'Answered' | 'Closed'
+  ): Ticket | undefined {
+    if (!this.memoryDb.tickets) return undefined;
+    const ticket = this.memoryDb.tickets.find((t) => t.id === ticketId);
+    if (ticket) {
+      ticket.status = status;
+      ticket.updatedAt = new Date().toISOString();
+      this.syncToRtdb();
+
+      if (rtdb) {
+        try {
+          const cleanTicket = cleanForFirebase(ticket);
+          set(ref(rtdb, `smm_store/tickets/${ticketId}`), cleanTicket).catch(() => {});
+          set(ref(rtdb, `tickets/${ticketId}`), cleanTicket).catch(() => {});
+        } catch (err) {
+          console.warn('store.ts updateTicketStatus RTDB notice:', err);
+        }
+      }
+    }
+    return ticket;
+  }
+
+  deleteTicket(ticketId: string): boolean {
+    if (!this.memoryDb.tickets) return false;
+    const initialLen = this.memoryDb.tickets.length;
+    this.memoryDb.tickets = this.memoryDb.tickets.filter((t) => t.id !== ticketId);
+    if (this.memoryDb.tickets.length !== initialLen) {
+      this.syncToRtdb();
+      if (rtdb) {
+        try {
+          remove(ref(rtdb, `smm_store/tickets/${ticketId}`)).catch(() => {});
+          remove(ref(rtdb, `tickets/${ticketId}`)).catch(() => {});
+        } catch (err) {}
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // CHILD PANEL WHITE-LABEL & DATA ISOLATION METHODS
+  // =========================================================================
+
+  getChildPanels(): ChildPanel[] {
+    if (!this.memoryDb.childPanels) {
+      this.memoryDb.childPanels = defaultChildPanels;
+    }
+    // Synchronize latest owner details (username, email, password, whatsapp) from user account
+    this.memoryDb.childPanels.forEach((p) => {
+      if (p.ownerId || p.ownerEmail) {
+        const u = this.getUser(p.ownerId) || this.getUser(p.ownerEmail);
+        if (u) {
+          if (u.email && (!p.ownerEmail || p.ownerEmail.includes('placeholder'))) p.ownerEmail = u.email;
+          if (u.username && (!p.ownerName || p.ownerName.includes('Owner'))) p.ownerName = u.username;
+          if (u.password) p.ownerPassword = u.password;
+          if (u.whatsappNo && !p.ownerWhatsapp) p.ownerWhatsapp = u.whatsappNo;
+        }
+      }
+      if (!p.ownerPassword) {
+        p.ownerPassword = 'password123';
+      }
+      if (p.pricing && p.pricing.adminMarginPercent === undefined) {
+        p.pricing.adminMarginPercent = this.memoryDb.settings.childPanelAdminMarginPercentage ?? 15;
+      }
+    });
+    return this.memoryDb.childPanels;
+  }
+
+  getChildPanel(idOrSlugOrDomain: string): ChildPanel | undefined {
+    if (!idOrSlugOrDomain) return undefined;
+    const query = String(idOrSlugOrDomain).trim().toLowerCase();
+    const panels = this.getChildPanels();
+    return panels.find((p) => {
+      if (!p) return false;
+      const idMatch = p.id && p.id.toLowerCase() === query;
+      const slugMatch = p.slug && p.slug.toLowerCase() === query;
+      const domainMatch = p.customDomain && p.customDomain.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/$/, '') === query.replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/$/, '');
+      const subMatch = p.subdomain && p.subdomain.toLowerCase() === query;
+      const ownerIdMatch = p.ownerId && p.ownerId.toLowerCase() === query;
+      const ownerEmailMatch = p.ownerEmail && p.ownerEmail.toLowerCase() === query;
+      return idMatch || slugMatch || domainMatch || subMatch || ownerIdMatch || ownerEmailMatch;
+    });
+  }
+
+  createChildPanel(data: Partial<ChildPanel>): { childPanel?: ChildPanel; error?: string } {
+    if (!data.name || !data.name.trim()) {
+      return { error: 'Child panel name is required' };
+    }
+    if (!data.slug || !data.slug.trim()) {
+      return { error: 'Child panel slug/subdomain identifier is required' };
+    }
+
+    const cleanSlug = data.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const existing = this.getChildPanel(cleanSlug);
+    if (existing) {
+      return { error: `A child panel with slug "${cleanSlug}" already exists.` };
+    }
+
+    const id = 'cp-' + cleanSlug + '-' + Math.floor(1000 + Math.random() * 9000);
+    const now = new Date().toISOString();
+
+    const ownerEmail = data.ownerEmail ? data.ownerEmail.trim().toLowerCase() : `${cleanSlug}_owner@smmshivam.com`;
+    const ownerName = data.ownerName ? data.ownerName.trim() : `${data.name} Owner`;
+    const ownerPass = data.ownerPassword || 'password123';
+    const ownerId = 'usr-cp-' + cleanSlug;
+
+    // Create or find child owner user
+    let ownerUser = this.getUser(ownerEmail) || this.getUser(ownerId);
+    if (!ownerUser) {
+      ownerUser = this.saveUser({
+        id: ownerId,
+        username: `${cleanSlug}_owner`,
+        email: ownerEmail,
+        whatsappNo: data.ownerWhatsapp || data.contact?.whatsappNumber || '919516862495',
+        password: ownerPass,
+        balance: 0,
+        totalSpent: 0,
+        role: 'child_owner',
+        childPanelId: id,
+        apiKey: 'cp_key_' + Math.random().toString(36).substring(2, 12),
+        status: 'active',
+        referralCode: cleanSlug.substring(0, 5).toUpperCase() + '01',
+        referralBalance: 0,
+        totalReferralEarnings: 0,
+        totalReferralWithdrawn: 0,
+        referralEligible: true,
+        createdAt: now,
+      });
+    } else {
+      ownerUser.role = 'child_owner';
+      ownerUser.childPanelId = id;
+      this.saveUser(ownerUser);
+    }
+
+    const newChildPanel: ChildPanel = {
+      id,
+      name: data.name.trim(),
+      slug: cleanSlug,
+      subdomain: data.subdomain ? data.subdomain.trim() : `${cleanSlug}.smmshivam.com`,
+      customDomain: data.customDomain ? data.customDomain.trim().toLowerCase() : '',
+      ownerId: ownerUser.id,
+      ownerName,
+      ownerEmail,
+      ownerPassword: ownerPass,
+      ownerWhatsapp: data.ownerWhatsapp || data.contact?.whatsappNumber || '',
+      status: data.status || 'active',
+      permissions: {
+        brandingCustomization: data.permissions?.brandingCustomization ?? true,
+        apiAccess: data.permissions?.apiAccess ?? true,
+        pricingCustomization: data.permissions?.pricingCustomization ?? true,
+        paymentCustomization: data.permissions?.paymentCustomization ?? true,
+        categoryServiceSelection: data.permissions?.categoryServiceSelection ?? true,
+      },
+      branding: {
+        panelName: data.branding?.panelName || data.name.trim(),
+        logoUrl: data.branding?.logoUrl || '',
+        faviconUrl: data.branding?.faviconUrl || '',
+        theme: data.branding?.theme || 'cyberpunk-neon',
+        accentColor: data.branding?.accentColor || '#38bdf8',
+        loginPageTitle: data.branding?.loginPageTitle || `${data.name.trim()} - Member Portal`,
+        loginLogoUrl: data.branding?.loginLogoUrl || '',
+        footerText: data.branding?.footerText || `© ${new Date().getFullYear()} ${data.name.trim()}. All rights reserved.`,
+      },
+      contact: {
+        whatsappNumber: data.contact?.whatsappNumber || data.ownerWhatsapp || '919516862495',
+        supportWhatsapp: data.contact?.supportWhatsapp || data.ownerWhatsapp || '919516862495',
+        supportEmail: data.contact?.supportEmail || ownerEmail,
+        supportTelegram: data.contact?.supportTelegram || '',
+        contactNumber: data.contact?.contactNumber || '',
+        supportMessage: data.contact?.supportMessage || `Welcome to ${data.name.trim()} support!`,
+      },
+      payment: {
+        upiId: data.payment?.upiId || '9770571091@ybl',
+        upiName: data.payment?.upiName || data.name.trim(),
+        qrCodeUrl: data.payment?.qrCodeUrl || '',
+        minDepositINR: data.payment?.minDepositINR || 10,
+        instructions: data.payment?.instructions || 'Scan QR Code or pay via UPI and enter UTR number.',
+      },
+      pricing: {
+        adminMarginPercent: typeof data.pricing?.adminMarginPercent === 'number' ? data.pricing.adminMarginPercent : (this.memoryDb.settings.childPanelAdminMarginPercentage ?? 15),
+        defaultMarginPercent: typeof data.pricing?.defaultMarginPercent === 'number' ? data.pricing.defaultMarginPercent : (this.memoryDb.settings.childPanelDefaultOwnerMarginPercentage ?? 25),
+        minAllowedMarginPercent: data.pricing?.minAllowedMarginPercent ?? (this.memoryDb.settings.childPanelMinMarginPercentage ?? 5),
+        maxAllowedMarginPercent: data.pricing?.maxAllowedMarginPercent ?? (this.memoryDb.settings.childPanelMaxMarginPercentage ?? 300),
+        serviceCustomPrices: data.pricing?.serviceCustomPrices || {},
+      },
+      apiSettings: {
+        useMainAdminApi: data.apiSettings?.useMainAdminApi ?? true,
+        apiProviderName: data.apiSettings?.apiProviderName || 'Main SMM API Proxy',
+        apiUrl: data.apiSettings?.apiUrl || '',
+        apiKey: data.apiSettings?.apiKey || '',
+        status: data.apiSettings?.status || 'connected',
+        lastTestedAt: now,
+      },
+      allowedCategoryIds: data.allowedCategoryIds || [],
+      allowedServiceIds: data.allowedServiceIds || [],
+      walletBalance: typeof data.walletBalance === 'number' ? data.walletBalance : 0,
+      totalRevenueINR: 0,
+      totalOrdersCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    if (!this.memoryDb.childPanels) this.memoryDb.childPanels = [];
+    this.memoryDb.childPanels.unshift(newChildPanel);
+    this.syncToRtdb();
+
+    return { childPanel: newChildPanel };
+  }
+
+  updateChildPanel(id: string, updates: Partial<ChildPanel>): { childPanel?: ChildPanel; error?: string } {
+    const panel = this.getChildPanel(id);
+    if (!panel) return { error: 'Child panel not found' };
+
+    // Prevent overwriting main admin branding through child panel updates!
+    if (updates.name !== undefined) panel.name = updates.name.trim();
+    if (updates.subdomain !== undefined) panel.subdomain = updates.subdomain.trim();
+    if (updates.customDomain !== undefined) panel.customDomain = updates.customDomain.trim().toLowerCase();
+    if (updates.ownerName !== undefined) panel.ownerName = updates.ownerName.trim();
+    if (updates.ownerEmail !== undefined) panel.ownerEmail = updates.ownerEmail.trim().toLowerCase();
+    if (updates.ownerPassword !== undefined) panel.ownerPassword = updates.ownerPassword;
+    if (updates.ownerWhatsapp !== undefined) panel.ownerWhatsapp = updates.ownerWhatsapp;
+    if (updates.status !== undefined) panel.status = updates.status;
+
+    // Sync credentials to owner User record
+    if (panel.ownerId || panel.ownerEmail) {
+      const ownerUser = this.getUser(panel.ownerId) || this.getUser(panel.ownerEmail);
+      if (ownerUser) {
+        if (updates.ownerEmail) ownerUser.email = updates.ownerEmail.trim().toLowerCase();
+        if (updates.ownerName) ownerUser.username = updates.ownerName.trim();
+        if (updates.ownerPassword) ownerUser.password = updates.ownerPassword;
+        if (updates.ownerWhatsapp) ownerUser.whatsappNo = updates.ownerWhatsapp;
+        this.saveUser(ownerUser);
+      }
+    }
+
+    if (updates.permissions) {
+      panel.permissions = { ...panel.permissions, ...updates.permissions };
+    }
+    if (updates.branding) {
+      panel.branding = { ...panel.branding, ...updates.branding };
+    }
+    if (updates.contact) {
+      panel.contact = { ...panel.contact, ...updates.contact };
+    }
+    if (updates.payment) {
+      panel.payment = { ...panel.payment, ...updates.payment };
+    }
+    if (updates.pricing) {
+      panel.pricing = { ...panel.pricing, ...updates.pricing };
+    }
+    if (updates.apiSettings) {
+      panel.apiSettings = { ...panel.apiSettings, ...updates.apiSettings };
+    }
+    if (updates.allowedCategoryIds !== undefined) {
+      panel.allowedCategoryIds = updates.allowedCategoryIds;
+    }
+    if (updates.allowedServiceIds !== undefined) {
+      panel.allowedServiceIds = updates.allowedServiceIds;
+    }
+    if (typeof updates.walletBalance === 'number') {
+      panel.walletBalance = updates.walletBalance;
+    }
+
+    panel.updatedAt = new Date().toISOString();
+    this.syncToRtdb();
+
+    return { childPanel: panel };
+  }
+
+  deleteChildPanel(id: string): { success: boolean; error?: string } {
+    if (!this.memoryDb.childPanels) return { success: false, error: 'No child panels' };
+    const initialLen = this.memoryDb.childPanels.length;
+    this.memoryDb.childPanels = this.memoryDb.childPanels.filter((p) => p.id !== id && p.slug !== id);
+    if (this.memoryDb.childPanels.length !== initialLen) {
+      this.syncToRtdb();
+      return { success: true };
+    }
+    return { success: false, error: 'Child panel not found' };
+  }
+
+  updateChildPanelBranding(childPanelId: string, branding: Partial<ChildPanelBranding>): { childPanel?: ChildPanel; error?: string } {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return { error: 'Child panel not found' };
+
+    if (!panel.permissions?.brandingCustomization) {
+      return { error: 'Branding customization is disabled for this child panel by Main Admin' };
+    }
+
+    panel.branding = {
+      ...panel.branding,
+      ...branding,
+    };
+    panel.updatedAt = new Date().toISOString();
+    this.syncToRtdb();
+    return { childPanel: panel };
+  }
+
+  updateChildPanelPricing(childPanelId: string, pricing: Partial<ChildPanelPricing>): { childPanel?: ChildPanel; error?: string } {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return { error: 'Child panel not found' };
+
+    if (!panel.permissions?.pricingCustomization) {
+      return { error: 'Pricing customization is disabled for this child panel by Main Admin' };
+    }
+
+    const minAllowed = panel.pricing?.minAllowedMarginPercent ?? 0;
+    const maxAllowed = panel.pricing?.maxAllowedMarginPercent ?? 1000;
+
+    if (typeof pricing.defaultMarginPercent === 'number') {
+      if (pricing.defaultMarginPercent < minAllowed || pricing.defaultMarginPercent > maxAllowed) {
+        return { error: `Margin must be between ${minAllowed}% and ${maxAllowed}% as permitted by Main Admin.` };
+      }
+    }
+
+    panel.pricing = {
+      ...panel.pricing,
+      ...pricing,
+      serviceCustomPrices: {
+        ...(panel.pricing?.serviceCustomPrices || {}),
+        ...(pricing.serviceCustomPrices || {}),
+      },
+    };
+    panel.updatedAt = new Date().toISOString();
+    this.syncToRtdb();
+    return { childPanel: panel };
+  }
+
+  updateChildPanelAdminMarginRules(data: {
+    adminMarginPercentage: number;
+    defaultOwnerMarginPercentage?: number;
+    minMarginPercentage?: number;
+    maxMarginPercentage?: number;
+    childPanelPriceINR?: number;
+    applyToAllExistingPanels?: boolean;
+  }): { settings: AdminSettings; updatedCount: number } {
+    const adminMargin = Number(data.adminMarginPercentage);
+    const defaultOwnerMargin = typeof data.defaultOwnerMarginPercentage === 'number' ? Number(data.defaultOwnerMarginPercentage) : (this.memoryDb.settings.childPanelDefaultOwnerMarginPercentage ?? 25);
+    const minMargin = typeof data.minMarginPercentage === 'number' ? Number(data.minMarginPercentage) : (this.memoryDb.settings.childPanelMinMarginPercentage ?? 5);
+    const maxMargin = typeof data.maxMarginPercentage === 'number' ? Number(data.maxMarginPercentage) : (this.memoryDb.settings.childPanelMaxMarginPercentage ?? 300);
+
+    this.memoryDb.settings.childPanelAdminMarginPercentage = adminMargin;
+    this.memoryDb.settings.childPanelDefaultOwnerMarginPercentage = defaultOwnerMargin;
+    this.memoryDb.settings.childPanelMinMarginPercentage = minMargin;
+    this.memoryDb.settings.childPanelMaxMarginPercentage = maxMargin;
+    if (typeof data.childPanelPriceINR === 'number' && data.childPanelPriceINR >= 0) {
+      this.memoryDb.settings.childPanelPriceINR = data.childPanelPriceINR;
+    }
+
+    let updatedCount = 0;
+    if (data.applyToAllExistingPanels && this.memoryDb.childPanels) {
+      this.memoryDb.childPanels.forEach((panel) => {
+        if (!panel.pricing) {
+          panel.pricing = {
+            adminMarginPercent: adminMargin,
+            defaultMarginPercent: defaultOwnerMargin,
+            minAllowedMarginPercent: minMargin,
+            maxAllowedMarginPercent: maxMargin,
+            serviceCustomPrices: {},
+          };
+        } else {
+          panel.pricing.adminMarginPercent = adminMargin;
+          panel.pricing.minAllowedMarginPercent = minMargin;
+          panel.pricing.maxAllowedMarginPercent = maxMargin;
+          if (typeof panel.pricing.defaultMarginPercent !== 'number' || panel.pricing.defaultMarginPercent < minMargin) {
+            panel.pricing.defaultMarginPercent = defaultOwnerMargin;
+          }
+        }
+        panel.updatedAt = new Date().toISOString();
+        updatedCount++;
+      });
+    }
+
+    this.syncToRtdb();
+    return { settings: this.memoryDb.settings, updatedCount };
+  }
+
+  updateChildPanelPayment(childPanelId: string, payment: Partial<ChildPanelPayment>): { childPanel?: ChildPanel; error?: string } {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return { error: 'Child panel not found' };
+
+    if (!panel.permissions?.paymentCustomization) {
+      return { error: 'Payment customization is disabled for this child panel by Main Admin' };
+    }
+
+    panel.payment = {
+      ...panel.payment,
+      ...payment,
+    };
+    panel.updatedAt = new Date().toISOString();
+    this.syncToRtdb();
+    return { childPanel: panel };
+  }
+
+  updateChildPanelContact(childPanelId: string, contact: Partial<ChildPanelContact>): { childPanel?: ChildPanel; error?: string } {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return { error: 'Child panel not found' };
+
+    panel.contact = {
+      ...panel.contact,
+      ...contact,
+    };
+    panel.updatedAt = new Date().toISOString();
+    this.syncToRtdb();
+    return { childPanel: panel };
+  }
+
+  updateChildPanelApi(childPanelId: string, apiSettings: Partial<ChildPanelApiSettings>): { childPanel?: ChildPanel; error?: string } {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return { error: 'Child panel not found' };
+
+    if (!panel.permissions?.apiAccess) {
+      return { error: 'API access configuration is disabled for this child panel by Main Admin' };
+    }
+
+    panel.apiSettings = {
+      ...panel.apiSettings,
+      ...apiSettings,
+    };
+    panel.updatedAt = new Date().toISOString();
+    this.syncToRtdb();
+    return { childPanel: panel };
+  }
+
+  updateChildPanelPermissions(childPanelId: string, permissions: Partial<ChildPanelPermissions>): { childPanel?: ChildPanel; error?: string } {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return { error: 'Child panel not found' };
+
+    panel.permissions = {
+      ...panel.permissions,
+      ...permissions,
+    };
+    panel.updatedAt = new Date().toISOString();
+    this.syncToRtdb();
+    return { childPanel: panel };
+  }
+
+  updateChildPanelStatus(childPanelId: string, status: 'active' | 'disabled'): { childPanel?: ChildPanel; error?: string } {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return { error: 'Child panel not found' };
+
+    panel.status = status;
+    panel.updatedAt = new Date().toISOString();
+    this.syncToRtdb();
+    return { childPanel: panel };
+  }
+
+  updateChildPanelWallet(childPanelId: string, amount: number, action: 'add' | 'reduce'): { childPanel?: ChildPanel; error?: string } {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return { error: 'Child panel not found' };
+
+    const num = Number(amount);
+    if (isNaN(num) || num <= 0) return { error: 'Valid positive amount is required' };
+
+    if (action === 'reduce') {
+      if (panel.walletBalance < num) {
+        return { error: `Insufficient wallet balance. Available: ₹${panel.walletBalance.toFixed(2)}` };
+      }
+      panel.walletBalance = Number((panel.walletBalance - num).toFixed(4));
+    } else {
+      panel.walletBalance = Number((panel.walletBalance + num).toFixed(4));
+    }
+
+    panel.updatedAt = new Date().toISOString();
+    this.syncToRtdb();
+    return { childPanel: panel };
+  }
+
+  // --- CHILD PANEL ISOLATED DATA QUERIES ---
+
+  getChildPanelOrders(childPanelId: string): Order[] {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return [];
+    const allOrders = this.memoryDb.orders || [];
+    return allOrders.filter((o) => o.childPanelId === panel.id || o.childPanelId === panel.slug);
+  }
+
+  getChildPanelUsers(childPanelId: string): User[] {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return [];
+    const allUsers = this.memoryDb.users || [];
+    return allUsers.filter((u) => u.childPanelId === panel.id || u.childPanelId === panel.slug);
+  }
+
+  getChildPanelDeposits(childPanelId: string): DepositRequest[] {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return [];
+    const allDeposits = this.memoryDb.depositRequests || [];
+    return allDeposits.filter((d) => d.childPanelId === panel.id || d.childPanelId === panel.slug);
+  }
+
+  getChildPanelTickets(childPanelId: string): Ticket[] {
+    const panel = this.getChildPanel(childPanelId);
+    if (!panel) return [];
+    const allTickets = this.memoryDb.tickets || [];
+    return allTickets.filter((t) => t.childPanelId === panel.id || t.childPanelId === panel.slug);
+  }
+
+  // Services tailored with Child Panel customized pricing and allowed filters
+  getChildPanelServices(childPanelId: string, activeOnly: boolean = true): Service[] {
+    const panel = this.getChildPanel(childPanelId);
+    let services = this.getServices(activeOnly);
+    if (!panel) return services;
+
+    // Filter allowed categories and services if restricted
+    if (panel.allowedCategoryIds && panel.allowedCategoryIds.length > 0) {
+      services = services.filter((s) => panel.allowedCategoryIds!.includes(s.category));
+    }
+    if (panel.allowedServiceIds && panel.allowedServiceIds.length > 0) {
+      services = services.filter((s) => panel.allowedServiceIds!.includes(s.id));
+    }
+
+    const adminMargin = typeof panel.pricing?.adminMarginPercent === 'number' ? panel.pricing.adminMarginPercent : (this.memoryDb.settings.childPanelAdminMarginPercentage ?? 15);
+    const defaultMargin = typeof panel.pricing?.defaultMarginPercent === 'number' ? panel.pricing.defaultMarginPercent : (this.memoryDb.settings.childPanelDefaultOwnerMarginPercentage ?? 25);
+    const customPrices = panel.pricing?.serviceCustomPrices || {};
+
+    return services.map((s) => {
+      const custom = customPrices[s.id];
+      // Admin Wholesale Price to Child Owner (e.g. s.providerRate + adminMargin% or s.sellingRate)
+      const baseCost = s.providerRate && s.providerRate > 0 ? s.providerRate : s.sellingRate;
+      const adminWholesaleRate = Number((baseCost * (1 + adminMargin / 100)).toFixed(4));
+
+      let effectiveSellingRate = s.sellingRate;
+      if (custom && typeof custom.sellingRate === 'number' && custom.sellingRate > 0) {
+        effectiveSellingRate = custom.sellingRate;
+      } else {
+        effectiveSellingRate = Number((adminWholesaleRate * (1 + defaultMargin / 100)).toFixed(4));
+      }
+
+      return {
+        ...s,
+        providerRate: adminWholesaleRate, // Child Owner's wholesale cost from Main Admin
+        sellingRate: effectiveSellingRate, // End customer's retail price on child panel
+      };
+    });
+  }
+
+  getChildPanelStats(childPanelId?: string, timeframe: string = 'all'): any {
+    let orders: Order[] = this.memoryDb.orders || [];
+    let users: User[] = this.memoryDb.users || [];
+    let deposits: DepositRequest[] = this.memoryDb.depositRequests || [];
+
+    if (childPanelId) {
+      const panel = this.getChildPanel(childPanelId);
+      if (panel) {
+        orders = orders.filter((o) => o.childPanelId === panel.id || o.childPanelId === panel.slug);
+        users = users.filter((u) => u.childPanelId === panel.id || u.childPanelId === panel.slug);
+        deposits = deposits.filter((d) => d.childPanelId === panel.id || d.childPanelId === panel.slug);
+      }
+    }
+
+    // Timeframe filtering
+    const now = Date.now();
+    if (timeframe === 'today') {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const startMs = startOfDay.getTime();
+      orders = orders.filter((o) => new Date(o.createdAt).getTime() >= startMs);
+      deposits = deposits.filter((d) => new Date(d.createdAt).getTime() >= startMs);
+    } else if (timeframe === 'yesterday') {
+      const startOfYesterday = new Date();
+      startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+      startOfYesterday.setHours(0, 0, 0, 0);
+      const endOfYesterday = new Date();
+      endOfYesterday.setDate(endOfYesterday.getDate() - 1);
+      endOfYesterday.setHours(23, 59, 59, 999);
+      orders = orders.filter((o) => {
+        const t = new Date(o.createdAt).getTime();
+        return t >= startOfYesterday.getTime() && t <= endOfYesterday.getTime();
+      });
+      deposits = deposits.filter((d) => {
+        const t = new Date(d.createdAt).getTime();
+        return t >= startOfYesterday.getTime() && t <= endOfYesterday.getTime();
+      });
+    } else if (timeframe === '7days') {
+      const cutoff = now - 7 * 86400000;
+      orders = orders.filter((o) => new Date(o.createdAt).getTime() >= cutoff);
+      deposits = deposits.filter((d) => new Date(d.createdAt).getTime() >= cutoff);
+    } else if (timeframe === '30days') {
+      const cutoff = now - 30 * 86400000;
+      orders = orders.filter((o) => new Date(o.createdAt).getTime() >= cutoff);
+      deposits = deposits.filter((d) => new Date(d.createdAt).getTime() >= cutoff);
+    }
+
+    const totalOrders = orders.length;
+    const completedOrders = orders.filter((o) => o.status === 'Completed').length;
+    const processingOrders = orders.filter((o) => o.status === 'Processing' || o.status === 'In Progress' || o.status === 'Pending').length;
+    const cancelledOrders = orders.filter((o) => o.status === 'Canceled').length;
+
+    const totalSales = orders.reduce((sum, o) => sum + (o.sellingPrice || 0), 0);
+    const totalProviderCost = orders.reduce((sum, o) => sum + (o.providerCost || 0), 0);
+    const totalProfit = orders.reduce((sum, o) => sum + (o.profit || 0), 0);
+    const totalChildProfit = orders.reduce((sum, o) => sum + (o.childOwnerProfit || 0), 0);
+    const totalDepositsApproved = deposits
+      .filter((d) => d.status === 'Approved')
+      .reduce((sum, d) => sum + (d.amount || 0), 0);
+
+    return {
+      timeframe,
+      totalUsers: users.length,
+      totalOrders,
+      completedOrders,
+      processingOrders,
+      cancelledOrders,
+      totalSales: Number(totalSales.toFixed(2)),
+      totalProviderCost: Number(totalProviderCost.toFixed(2)),
+      totalProfit: Number(totalProfit.toFixed(2)),
+      totalChildProfit: Number(totalChildProfit.toFixed(2)),
+      totalDepositsApproved: Number(totalDepositsApproved.toFixed(2)),
+    };
+  }
+
+  // --- CHILD PANEL PURCHASE REQUESTS ---
+
+  getChildPanelRequests(userId?: string): ChildPanelPurchaseRequest[] {
+    if (!this.memoryDb.childPanelRequests) {
+      this.memoryDb.childPanelRequests = [];
+    }
+
+    // Enrich requests with latest user registration credentials (password, email, whatsapp, username)
+    this.memoryDb.childPanelRequests.forEach((req) => {
+      const u = this.getUser(req.userId) || (req.userEmail ? this.getUser(req.userEmail) : undefined) || (req.username ? this.getUser(req.username) : undefined);
+      if (u) {
+        if (u.username && (!req.username || req.username === 'User')) req.username = u.username;
+        if (u.email && !req.userEmail) req.userEmail = u.email;
+        if (u.whatsappNo && !req.whatsappNo) req.whatsappNo = u.whatsappNo;
+        if (u.password && !req.password) req.password = u.password;
+      }
+    });
+
+    if (userId) {
+      return this.memoryDb.childPanelRequests.filter(
+        (r) => r.userId === userId || (r.userEmail && r.userEmail.toLowerCase() === userId.toLowerCase())
+      );
+    }
+    return this.memoryDb.childPanelRequests;
+  }
+
+  getChildPanelRequest(id: string): ChildPanelPurchaseRequest | undefined {
+    if (!this.memoryDb.childPanelRequests) return undefined;
+    const req = this.memoryDb.childPanelRequests.find((r) => r.id === id);
+    if (req) {
+      const u = this.getUser(req.userId) || (req.userEmail ? this.getUser(req.userEmail) : undefined);
+      if (u && u.password && !req.password) req.password = u.password;
+    }
+    return req;
+  }
+
+  createChildPanelRequest(data: {
+    userId: string;
+    username?: string;
+    userEmail?: string;
+    whatsappNo?: string;
+    password?: string;
+    requestedPanelName: string;
+    requestedSlug: string;
+    requestedDomain?: string;
+    amount?: number;
+    utr: string;
+  }): { request?: ChildPanelPurchaseRequest; error?: string } {
+    if (!data.requestedPanelName || !data.requestedPanelName.trim()) {
+      return { error: 'Child panel name is required' };
+    }
+    if (!data.requestedSlug || !data.requestedSlug.trim()) {
+      return { error: 'Desired panel slug/subdomain identifier is required' };
+    }
+    if (!data.utr || !data.utr.trim()) {
+      return { error: 'Payment UTR / Transaction Reference Number is required' };
+    }
+
+    const cleanSlug = data.requestedSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (!cleanSlug) {
+      return { error: 'Please enter a valid alphanumeric slug' };
+    }
+
+    const existingPanel = this.getChildPanel(cleanSlug);
+    if (existingPanel) {
+      return { error: `The panel slug "${cleanSlug}" is already taken. Please choose another.` };
+    }
+
+    if (!this.memoryDb.childPanelRequests) {
+      this.memoryDb.childPanelRequests = [];
+    }
+
+    const existingPending = this.memoryDb.childPanelRequests.find(
+      (r) => r.requestedSlug.toLowerCase() === cleanSlug && r.status === 'Pending'
+    );
+    if (existingPending) {
+      return { error: `A pending purchase request for slug "${cleanSlug}" is already waiting for Admin approval.` };
+    }
+
+    const user = this.getUser(data.userId) || (data.userEmail ? this.getUser(data.userEmail) : undefined);
+    const id = 'CPR-' + Math.floor(100000 + Math.random() * 900000);
+    const now = new Date().toISOString();
+    const price =
+      typeof data.amount === 'number' && data.amount > 0
+        ? data.amount
+        : (this.memoryDb.settings.childPanelPriceINR || 499);
+
+    const userPass = data.password || (user ? user.password : undefined);
+
+    const request: ChildPanelPurchaseRequest = {
+      id,
+      userId: data.userId || (user ? user.id : 'usr-demo'),
+      username: data.username || (user ? user.username : 'User'),
+      userEmail: data.userEmail || (user ? user.email : ''),
+      whatsappNo: data.whatsappNo || (user ? user.whatsappNo : ''),
+      password: userPass,
+      requestedPanelName: data.requestedPanelName.trim(),
+      requestedSlug: cleanSlug,
+      requestedDomain: data.requestedDomain ? data.requestedDomain.trim().toLowerCase() : '',
+      amount: price,
+      utr: data.utr.trim(),
+      status: 'Pending',
+      createdAt: now,
+    };
+
+    this.memoryDb.childPanelRequests.unshift(request);
+    this.saveToDisk();
+    this.syncToRtdb();
+
+    if (rtdb) {
+      try {
+        const cleanReq = cleanForFirebase(request);
+        set(ref(rtdb, `smm_store/childPanelRequests/${id}`), cleanReq).catch(() => {});
+        set(ref(rtdb, `child_panel_requests/${id}`), cleanReq).catch(() => {});
+      } catch (err) {
+        console.warn('createChildPanelRequest RTDB notice:', err);
+      }
+    }
+
+    return { request };
+  }
+
+  approveChildPanelRequest(
+    requestId: string,
+    adminNote?: string
+  ): { success: boolean; request?: ChildPanelPurchaseRequest; childPanel?: ChildPanel; user?: User; error?: string } {
+    if (!this.memoryDb.childPanelRequests) {
+      return { success: false, error: 'No purchase requests found' };
+    }
+
+    const request = this.memoryDb.childPanelRequests.find((r) => r.id === requestId);
+    if (!request) {
+      return { success: false, error: 'Child panel purchase request not found' };
+    }
+
+    if (request.status === 'Approved' && request.childPanelId) {
+      const existingPanel = this.getChildPanel(request.childPanelId);
+      return { success: true, request, childPanel: existingPanel };
+    }
+
+    const cleanSlug = request.requestedSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+    let existingPanel = this.getChildPanel(cleanSlug);
+    const panelId = existingPanel
+      ? existingPanel.id
+      : 'cp-' + cleanSlug + '-' + Math.floor(1000 + Math.random() * 9000);
+    const now = new Date().toISOString();
+
+    // CRITICAL REQUIREMENT:
+    // 1. DO NOT create a new account!
+    // 2. Convert the SAME existing user account into 'child_owner' / RESELLER.
+    // 3. Keep the same User ID, username, email, password, wallet balance and all existing data.
+    // 4. Create and link a unique childPanelId.
+    let user = this.getUser(request.userId);
+    if (!user && request.userEmail) {
+      user = this.getUser(request.userEmail);
+    }
+    if (!user) {
+      user = this.memoryDb.users.find(
+        (u) =>
+          (u.email && u.email.toLowerCase() === request.userEmail.toLowerCase()) ||
+          (u.username && u.username.toLowerCase() === request.username.toLowerCase())
+      );
+    }
+
+    if (!user) {
+      // Fallback: If user record was transient, create it with original user details
+      user = this.saveUser({
+        id: request.userId || 'usr-' + cleanSlug,
+        username: request.username || `${cleanSlug}_user`,
+        email: request.userEmail || `${cleanSlug}@smmshivam.com`,
+        whatsappNo: request.whatsappNo || '919516862495',
+        password: 'password123',
+        balance: 0,
+        totalSpent: 0,
+        role: 'child_owner',
+        childPanelId: panelId,
+        apiKey: 'cp_key_' + Math.random().toString(36).substring(2, 12),
+        status: 'active',
+        referralCode: cleanSlug.substring(0, 5).toUpperCase() + '01',
+        referralBalance: 0,
+        totalReferralEarnings: 0,
+        totalReferralWithdrawn: 0,
+        referralEligible: true,
+        createdAt: now,
+      });
+    } else {
+      // Convert existing user
+      user.role = 'child_owner';
+      user.childPanelId = panelId;
+      if (request.whatsappNo && !user.whatsappNo) user.whatsappNo = request.whatsappNo;
+      this.saveUser(user);
+    }
+
+    // Create or update ChildPanel linked to this user
+    if (!existingPanel) {
+      existingPanel = {
+        id: panelId,
+        name: request.requestedPanelName.trim(),
+        slug: cleanSlug,
+        subdomain: `${cleanSlug}.smmshivam.com`,
+        customDomain: request.requestedDomain ? request.requestedDomain.trim().toLowerCase() : '',
+        ownerId: user.id,
+        ownerName: user.username,
+        ownerEmail: user.email,
+        ownerPassword: user.password || 'password123',
+        ownerWhatsapp: user.whatsappNo || request.whatsappNo || '919516862495',
+        status: 'active',
+        permissions: {
+          brandingCustomization: true,
+          apiAccess: true,
+          pricingCustomization: true,
+          paymentCustomization: true,
+          categoryServiceSelection: true,
+        },
+        branding: {
+          panelName: request.requestedPanelName.trim(),
+          logoUrl: '',
+          faviconUrl: '',
+          theme: 'cyberpunk-neon',
+          accentColor: '#38bdf8',
+          loginPageTitle: `${request.requestedPanelName.trim()} - Member Portal`,
+          loginLogoUrl: '',
+          footerText: `© ${new Date().getFullYear()} ${request.requestedPanelName.trim()}. All rights reserved.`,
+        },
+        contact: {
+          whatsappNumber: user.whatsappNo || request.whatsappNo || '919516862495',
+          supportWhatsapp: user.whatsappNo || request.whatsappNo || '919516862495',
+          supportEmail: user.email || request.userEmail,
+          supportTelegram: '',
+          contactNumber: user.whatsappNo || request.whatsappNo || '',
+          supportMessage: `Welcome to ${request.requestedPanelName.trim()} support!`,
+        },
+        payment: {
+          upiId: '9770571091@ybl',
+          upiName: request.requestedPanelName.trim(),
+          qrCodeUrl: '',
+          minDepositINR: 10,
+          instructions: 'Scan QR Code or pay via UPI and enter UTR number.',
+        },
+        pricing: {
+          adminMarginPercent: this.memoryDb.settings.childPanelAdminMarginPercentage ?? 15,
+          defaultMarginPercent: this.memoryDb.settings.childPanelDefaultOwnerMarginPercentage ?? 25,
+          minAllowedMarginPercent: this.memoryDb.settings.childPanelMinMarginPercentage ?? 5,
+          maxAllowedMarginPercent: this.memoryDb.settings.childPanelMaxMarginPercentage ?? 300,
+          serviceCustomPrices: {},
+        },
+        apiSettings: {
+          useMainAdminApi: true,
+          apiProviderName: 'Main SMM API Proxy',
+          apiUrl: '',
+          apiKey: '',
+          status: 'connected',
+          lastTestedAt: now,
+        },
+        allowedCategoryIds: [],
+        allowedServiceIds: [],
+        walletBalance: 0,
+        totalRevenueINR: 0,
+        totalOrdersCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      if (!this.memoryDb.childPanels) this.memoryDb.childPanels = [];
+      this.memoryDb.childPanels.unshift(existingPanel);
+    } else {
+      existingPanel.ownerId = user.id;
+      existingPanel.ownerEmail = user.email;
+      existingPanel.ownerName = user.username;
+      existingPanel.status = 'active';
+      existingPanel.updatedAt = now;
+    }
+
+    request.status = 'Approved';
+    request.childPanelId = panelId;
+    request.adminNote = adminNote || 'Approved by Main Admin';
+    request.processedAt = now;
+
+    this.saveToDisk();
+    this.syncToRtdb();
+
+    if (rtdb) {
+      try {
+        const cleanReq = cleanForFirebase(request);
+        const cleanPanel = cleanForFirebase(existingPanel);
+        const cleanUser = cleanForFirebase(user);
+
+        set(ref(rtdb, `smm_store/childPanelRequests/${requestId}`), cleanReq).catch(() => {});
+        set(ref(rtdb, `child_panel_requests/${requestId}`), cleanReq).catch(() => {});
+        set(ref(rtdb, `child_panels/${panelId}`), cleanPanel).catch(() => {});
+        set(ref(rtdb, `users/${user.id}`), cleanUser).catch(() => {});
+        if (user.firebaseUid && user.firebaseUid !== user.id) {
+          set(ref(rtdb, `users/${user.firebaseUid}`), cleanUser).catch(() => {});
+        }
+      } catch (err) {
+        console.warn('approveChildPanelRequest RTDB notice:', err);
+      }
+    }
+
+    return { success: true, request, childPanel: existingPanel, user };
+  }
+
+  rejectChildPanelRequest(
+    requestId: string,
+    adminNote?: string
+  ): { success: boolean; request?: ChildPanelPurchaseRequest; error?: string } {
+    if (!this.memoryDb.childPanelRequests) {
+      return { success: false, error: 'No purchase requests found' };
+    }
+
+    const request = this.memoryDb.childPanelRequests.find((r) => r.id === requestId);
+    if (!request) {
+      return { success: false, error: 'Child panel purchase request not found' };
+    }
+
+    const now = new Date().toISOString();
+    request.status = 'Rejected';
+    request.adminNote = adminNote || 'Rejected by Main Admin';
+    request.processedAt = now;
+
+    this.saveToDisk();
+    this.syncToRtdb();
+
+    if (rtdb) {
+      try {
+        const cleanReq = cleanForFirebase(request);
+        set(ref(rtdb, `smm_store/childPanelRequests/${requestId}`), cleanReq).catch(() => {});
+        set(ref(rtdb, `child_panel_requests/${requestId}`), cleanReq).catch(() => {});
+      } catch (err) {
+        console.warn('rejectChildPanelRequest RTDB notice:', err);
+      }
+    }
+
+    return { success: true, request };
+  }
+
+  // Resolves effective branding and settings without EVER mutating Main Admin database record
+  resolvePanelBranding(panelSlugOrIdOrDomain?: string): {
+    isChildPanel: boolean;
+    childPanel?: ChildPanel;
+    settings: AdminSettings;
+    branding: ChildPanelBranding;
+    contact: ChildPanelContact;
+    payment: ChildPanelPayment;
+    active: boolean;
+  } {
+    const mainSettings = this.getSettings();
+    if (!panelSlugOrIdOrDomain) {
+      return {
+        isChildPanel: false,
+        settings: mainSettings,
+        branding: {
+          panelName: mainSettings.siteName,
+          logoUrl: mainSettings.logoUrl,
+          theme: mainSettings.theme || 'default-dark',
+          accentColor: '#eab308',
+        },
+        contact: {
+          whatsappNumber: mainSettings.whatsappNumber,
+          supportWhatsapp: mainSettings.orderWhatsappNumber || mainSettings.whatsappNumber,
+          supportTelegram: mainSettings.telegramUrl,
+          supportMessage: mainSettings.notice,
+        },
+        payment: {
+          upiId: mainSettings.upiId,
+          minDepositINR: mainSettings.minDepositINR || 10,
+        },
+        active: true,
+      };
+    }
+
+    const childPanel = this.getChildPanel(panelSlugOrIdOrDomain);
+    if (!childPanel) {
+      return {
+        isChildPanel: false,
+        settings: mainSettings,
+        branding: {
+          panelName: mainSettings.siteName,
+          logoUrl: mainSettings.logoUrl,
+          theme: mainSettings.theme || 'default-dark',
+          accentColor: '#eab308',
+        },
+        contact: {
+          whatsappNumber: mainSettings.whatsappNumber,
+          supportWhatsapp: mainSettings.orderWhatsappNumber || mainSettings.whatsappNumber,
+          supportTelegram: mainSettings.telegramUrl,
+          supportMessage: mainSettings.notice,
+        },
+        payment: {
+          upiId: mainSettings.upiId,
+          minDepositINR: mainSettings.minDepositINR || 10,
+        },
+        active: true,
+      };
+    }
+
+    const mergedSettings: AdminSettings = {
+      ...mainSettings,
+      siteName: childPanel.branding.panelName || childPanel.name,
+      logoUrl: childPanel.branding.logoUrl || mainSettings.logoUrl,
+      whatsappNumber: childPanel.contact.whatsappNumber || mainSettings.whatsappNumber,
+      orderWhatsappNumber: childPanel.contact.supportWhatsapp || childPanel.contact.whatsappNumber || mainSettings.orderWhatsappNumber,
+      telegramUrl: childPanel.contact.supportTelegram || mainSettings.telegramUrl,
+      upiId: childPanel.payment.upiId || mainSettings.upiId,
+      minDepositINR: childPanel.payment.minDepositINR || 10,
+      theme: childPanel.branding.theme || 'default-dark',
+      notice: childPanel.contact.supportMessage || mainSettings.notice,
+    };
+
+    return {
+      isChildPanel: true,
+      childPanel,
+      settings: mergedSettings,
+      branding: childPanel.branding,
+      contact: childPanel.contact,
+      payment: childPanel.payment,
+      active: childPanel.status === 'active',
+    };
+  }
 }
 
 export const db = new DatabaseStore();
+

@@ -39,20 +39,19 @@ export const ServicesList: React.FC<ServicesListProps> = ({
       }
     });
 
+    // Also include all explicitly configured admin categories
     categories.forEach((cat) => {
-      if (cat.name) {
+      if (cat && cat.name) {
         const key = cat.name.trim().toLowerCase();
         if (!catMap.has(key)) {
           const count = services.filter(
             (s) => s.status === 'active' && s.category.trim().toLowerCase() === key
           ).length;
-          if (count > 0) {
-            catMap.set(key, {
-              id: cat.id,
-              name: cat.name.trim(),
-              count,
-            });
-          }
+          catMap.set(key, {
+            id: cat.id,
+            name: cat.name.trim(),
+            count,
+          });
         }
       }
     });
@@ -129,11 +128,11 @@ export const ServicesList: React.FC<ServicesListProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-xs font-medium">
               {filteredServices.length > 0 ? (
-                filteredServices.map((srv) => {
+                filteredServices.map((srv, idx) => {
                   const rateDisp = formatServiceRate(srv, currency);
 
                   return (
-                    <tr key={srv.id} className="hover:bg-slate-800/40 transition-colors">
+                    <tr key={srv.id ? `${srv.id}-${idx}` : `srv-${idx}`} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4 font-mono text-slate-400 font-bold">
                         #{srv.providerServiceId}
                       </td>

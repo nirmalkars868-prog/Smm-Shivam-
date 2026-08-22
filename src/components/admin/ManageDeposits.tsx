@@ -5,11 +5,22 @@ import { rtdb, ref, onValue, set } from '../../lib/firebaseClient';
 
 function ensureArray<T = any>(data: any): T[] {
   if (!data) return [];
-  if (Array.isArray(data)) return data.filter(Boolean);
-  if (typeof data === 'object') {
-    return Object.values(data).filter(Boolean) as T[];
+  let arr: T[] = [];
+  if (Array.isArray(data)) {
+    arr = data.filter(Boolean);
+  } else if (typeof data === 'object') {
+    arr = Object.values(data).filter(Boolean) as T[];
   }
-  return [];
+  const map = new Map<string, T>();
+  const withoutId: T[] = [];
+  for (const item of arr) {
+    if (item && typeof item === 'object' && 'id' in item && (item as any).id) {
+      map.set(String((item as any).id), item);
+    } else {
+      withoutId.push(item);
+    }
+  }
+  return Array.from(map.values()).concat(withoutId);
 }
 
 export const ManageDeposits: React.FC = () => {
@@ -252,14 +263,14 @@ export const ManageDeposits: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredDeposits.map((d) => {
+                filteredDeposits.map((d, idx) => {
                   const isPending = d.status === 'Pending';
                   const isApproved = d.status === 'Approved';
                   const isRejected = d.status === 'Rejected';
                   const isProcessing = processingId === d.id;
 
                   return (
-                    <tr key={d.id} className="hover:bg-zinc-900/60 transition-colors">
+                    <tr key={d.id ? `${d.id}-${idx}` : `dep-${idx}`} className="hover:bg-zinc-900/60 transition-colors">
                       <td className="py-3.5 px-4 font-mono font-bold text-yellow-400">{d.id}</td>
                       <td className="py-3.5 px-4 font-black text-white">{d.username}</td>
                       <td className="py-3.5 px-4 font-mono font-black text-yellow-400 text-sm">

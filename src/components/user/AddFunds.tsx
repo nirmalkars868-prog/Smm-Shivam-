@@ -1,25 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import { QrCode, CheckCircle2, Wallet, MessageSquare, ExternalLink, ShieldCheck, AlertCircle, RefreshCw, History, XCircle, Clock, Copy, Check } from 'lucide-react';
-import { DepositRequest, User } from '../../types';
+import { DepositRequest, User, AdminSettings } from '../../types';
 import { rtdb, ref, onValue, set, cleanForFirebase } from '../../lib/firebaseClient';
 
 function ensureArray<T = any>(data: any): T[] {
   if (!data) return [];
-  if (Array.isArray(data)) return data.filter(Boolean);
-  if (typeof data === 'object') {
-    return Object.values(data).filter(Boolean) as T[];
+  let arr: T[] = [];
+  if (Array.isArray(data)) {
+    arr = data.filter(Boolean);
+  } else if (typeof data === 'object') {
+    arr = Object.values(data).filter(Boolean) as T[];
   }
-  return [];
+  const map = new Map<string, T>();
+  const withoutId: T[] = [];
+  for (const item of arr) {
+    if (item && typeof item === 'object' && 'id' in item && (item as any).id) {
+      map.set(String((item as any).id), item);
+    } else {
+      withoutId.push(item);
+    }
+  }
+  return Array.from(map.values()).concat(withoutId);
 }
 
 interface AddFundsProps {
   currentUser?: User | null;
   userBalance: number;
   currency: string;
+  settings?: AdminSettings;
+  childPanelId?: string;
   onBalanceUpdated: () => void;
 }
 
-export const AddFunds: React.FC<AddFundsProps> = ({ currentUser, userBalance, currency, onBalanceUpdated }) => {
+export const AddFunds: React.FC<AddFundsProps> = ({ currentUser, userBalance, currency, settings, childPanelId, onBalanceUpdated }) => {
   const [amountINR, setAmountINR] = useState<string>('100');
   const [utrNumber, setUtrNumber] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -36,9 +49,11 @@ export const AddFunds: React.FC<AddFundsProps> = ({ currentUser, userBalance, cu
 
   const activeUserId = currentUser?.id || localStorage.getItem('smm_panel_userId') || 'usr-demo';
 
-  // Target UPI URL (Hidden raw string in code, rendered as QR)
-  const upiPayString = `upi://pay?pa=9770571091@ybl&pn=SMM%20SHIVAM&cu=INR`;
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(upiPayString)}&size=260x260&margin=10&color=000000&bcolor=ffffff`;
+  // Target UPI URL (Uses panel-specific UPI ID or fallback to Shivam's UPI)
+  const effectiveUpiId = settings?.upiId || '9770571091@ybl';
+  const effectiveSiteName = settings?.siteName || 'SMM SHIVAM';
+  const upiPayString = `upi://pay?pa=${encodeURIComponent(effectiveUpiId)}&pn=${encodeURIComponent(effectiveSiteName)}&cu=INR`;
+  const qrImageUrl = settings?.qrCodeUrl || `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(upiPayString)}&size=260x260&margin=10&color=000000&bcolor=ffffff`;
 
   useEffect(() => {
     fetchHistory();
@@ -405,12 +420,12 @@ export const AddFunds: React.FC<AddFundsProps> = ({ currentUser, userBalance, cu
                   </td>
                 </tr>
               ) : (
-                userDeposits.map((dep) => {
+                userDeposits.map((dep, idx) => {
                   const isApproved = dep.status === 'Approved';
                   const isRejected = dep.status === 'Rejected';
 
                   return (
-                    <tr key={dep.id} className="hover:bg-zinc-900/60 transition-colors">
+                    <tr key={dep.id ? `${dep.id}-${idx}` : `dep-${idx}`} className="hover:bg-zinc-900/60 transition-colors">
                       <td className="py-3.5 px-4 font-mono font-bold text-yellow-400">{dep.id}</td>
                       <td className="py-3.5 px-4 font-mono font-black text-white text-sm">
                         ₹{dep.amount.toLocaleString('en-IN')}

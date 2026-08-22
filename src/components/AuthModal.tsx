@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LogIn, UserPlus, Phone, Mail, Lock, User as UserIcon, X, Check, AlertTriangle, ShieldCheck, Gift } from 'lucide-react';
 import { User } from '../types';
 import { auth, rtdb, ref, get, set, signInWithEmailAndPassword, createUserWithEmailAndPassword } from '../lib/firebaseClient';
@@ -9,6 +9,10 @@ interface AuthModalProps {
   onAuthSuccess: (user: User) => void;
   initialReferralCode?: string;
   allowClose?: boolean;
+  childPanelId?: string;
+  childPanelBranding?: any;
+  settings?: any;
+  onTriggerSecretAdmin?: () => void;
 }
 
 export async function fetchUserProfile(uid: string, identifierOrEmail: string = ''): Promise<User | null> {
@@ -63,7 +67,6 @@ export async function fetchUserProfile(uid: string, identifierOrEmail: string = 
             id: uid || match.id,
             firebaseUid: uid || match.id,
           };
-          delete (updatedProfile as any).password;
           if (rtdb && uid) {
             await set(ref(rtdb, `users/${uid}`), updatedProfile).catch(() => {});
           }
@@ -92,7 +95,6 @@ export async function fetchUserProfile(uid: string, identifierOrEmail: string = 
             ...data.user,
             id: uid || data.user.id,
           };
-          delete (updatedProfile as any).password;
           if (rtdb && uid) {
             await set(ref(rtdb, `users/${uid}`), updatedProfile).catch(() => {});
           }
@@ -166,20 +168,79 @@ export async function fetchUserProfile(uid: string, identifierOrEmail: string = 
   return null;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuccess, initialReferralCode, allowClose = true }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({
+  isOpen,
+  onClose,
+  onAuthSuccess,
+  initialReferralCode,
+  allowClose = true,
+  childPanelId,
+  childPanelBranding,
+  settings,
+  onTriggerSecretAdmin,
+}) => {
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('signup');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Form Fields
+  // Signup form fields
   const [username, setUsername] = useState('');
-  const [whatsappNo, setWhatsappNo] = useState('');
   const [email, setEmail] = useState('');
+  const [whatsappNo, setWhatsappNo] = useState('');
   const [password, setPassword] = useState('');
-  const [referralCode, setReferralCode] = useState('ADMIN09');
+  const [referralCode, setReferralCode] = useState(initialReferralCode || 'ADMIN09');
+
+  // Login form fields
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+
+  // Branding
+  const displayBrandName = childPanelBranding?.siteName || settings?.siteName || 'SMM SHIVAM';
+  const displayLogo = childPanelBranding?.logoUrl || settings?.logoUrl || '';
+
+  const tapCountRef = useRef<number>(0);
+  const lastTapTimeRef = useRef<number>(0);
+
+  const handleLogoTap = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    const now = Date.now();
+    // If last tap was more than 4.5 seconds ago, reset counter
+    if (now - lastTapTimeRef.current > 4500) {
+      tapCountRef.current = 1;
+    } else {
+      tapCountRef.current += 1;
+    }
+    lastTapTimeRef.current = now;
+
+    if (tapCountRef.current >= 7) {
+      tapCountRef.current = 0;
+      if (onTriggerSecretAdmin) {
+        onTriggerSecretAdmin();
+      } else {
+        // Fallback: create admin session profile and log in
+        const secretAdminUser: User = {
+          id: 'usr-admin',
+          username: 'yourshivamff_',
+          email: 'admin@smmshivam.com',
+          whatsappNo: '9516862495',
+          balance: 500.0,
+          totalSpent: 0,
+          role: 'admin',
+          apiKey: 'usr_api_key_88f910a2b',
+          status: 'active',
+          referralCode: 'ADMIN09',
+          referralBalance: 0,
+          totalReferralEarnings: 0,
+          totalReferralWithdrawn: 0,
+          referralEligible: true,
+          createdAt: new Date().toISOString(),
+        };
+        onAuthSuccess(secretAdminUser);
+        onClose();
+      }
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -214,6 +275,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
     setIsSubmitting(true);
 
     try {
+      // Check if username or email is already registered
+      try {
+        const checkRes = await fetch(
+          `/api/auth/check-username?username=${encodeURIComponent(cleanUsername)}&email=${encodeURIComponent(cleanEmail)}`
+        );
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          if (checkData.usernameTaken) {
+            setErrorMsg('This username already registered');
+            setIsSubmitting(false);
+            return;
+          }
+          if (checkData.emailTaken) {
+            setErrorMsg('An account with this email address already exists. Please log in.');
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('Username availability check error:', e);
+      }
+
+      // Check RTDB users if available
+      if (rtdb) {
+        try {
+          const storeSnap = await get(ref(rtdb, 'smm_store/users'));
+          if (storeSnap.exists()) {
+            const usersList = storeSnap.val();
+            const arr = Array.isArray(usersList) ? usersList : Object.values(usersList || {});
+            const exists = arr.some(
+              (u: any) => u && u.username && u.username.trim().toLowerCase() === cleanUsername.toLowerCase()
+            );
+            if (exists) {
+              setErrorMsg('This username already registered');
+              setIsSubmitting(false);
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('RTDB username uniqueness check warning:', err);
+        }
+      }
+
       // 1. Authenticate / Create Firebase Auth user
       const cred = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
       if (!cred?.user) {
@@ -224,15 +328,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
       const myReferralCode = cleanUsername.toUpperCase().replace(/[^A-Z0-9]/g, '') || ('REF' + Math.floor(1000 + Math.random() * 9000));
       const userApiKey = 'usr_key_' + Math.random().toString(36).substring(2, 12);
 
-      // 2. Build User Profile object WITHOUT password
+      // 2. Build User Profile object with password for Admin Panel visibility
       const newUserProfile: User = {
         id: firebaseUid,
         username: cleanUsername,
         email: cleanEmail,
         whatsappNo: cleanWhatsapp,
+        password: cleanPass,
         balance: 0,
         totalSpent: 0,
         role: 'user',
+        childPanelId: childPanelId || undefined,
         apiKey: userApiKey,
         status: 'active',
         referralCode: myReferralCode,
@@ -413,15 +519,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
           </button>
         )}
 
-        {/* Header */}
-        <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-yellow-500/20">
-            <ShieldCheck className="w-6 h-6 text-black" />
+        {/* Header with 7-Tap Secret Admin Unlock */}
+        <div
+          onClick={handleLogoTap}
+          onTouchEnd={handleLogoTap}
+          title="SMM SHIVAM"
+          className="text-center mb-6 cursor-pointer select-none group active:opacity-90"
+        >
+          <div
+            className="w-12 h-12 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-yellow-500/20 overflow-hidden group-active:scale-90 transition-transform pointer-events-none"
+          >
+            {displayLogo ? (
+              <img src={displayLogo} alt={displayBrandName} className="w-full h-full object-cover pointer-events-none" />
+            ) : (
+              <ShieldCheck className="w-6 h-6 text-black pointer-events-none" />
+            )}
           </div>
-          <h2 className="text-xl font-black text-yellow-400 uppercase tracking-tight">
-            SMM Panel Portal
+          <h2
+            className="text-xl font-black text-yellow-400 uppercase tracking-tight pointer-events-none"
+          >
+            {displayBrandName}
           </h2>
-          <p className="text-xs text-zinc-400 mt-1">
+          <p className="text-xs text-zinc-300 font-bold tracking-wide uppercase mt-1 pointer-events-none">
+            WELCOME TO OUR DIGITAL WORLD
+          </p>
+          <p className="text-[11px] text-zinc-400 mt-0.5 pointer-events-none">
             Sign up or Log in with your WhatsApp No, Email & Password
           </p>
         </div>

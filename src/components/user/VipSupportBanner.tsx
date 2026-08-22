@@ -11,7 +11,9 @@ export const VipSupportBanner: React.FC<VipSupportBannerProps> = ({ settings }) 
   const channelUrl = settings?.whatsappChannelUrl || 'https://whatsapp.com/channel/smm_shivam_official';
   const telegramUrl = settings?.telegramUrl || 'https://t.me/smm_shivam_official';
   const youtubeUrl = settings?.youtubeUrl || 'https://youtube.com/@smmshivam';
-  const youtubeText = settings?.youtubeSubscribersText || '154K Subscribe';
+  const youtubeText = (settings?.youtubeSubscribersText && !settings.youtubeSubscribersText.includes('154K'))
+    ? settings.youtubeSubscribersText
+    : 'YouTube';
 
   return (
     <div className="w-full bg-gradient-to-b from-zinc-950 via-zinc-900/90 to-zinc-950 border border-yellow-500/30 rounded-3xl p-5 sm:p-6 shadow-2xl shadow-yellow-500/10 space-y-4 text-center relative overflow-hidden">
@@ -91,7 +93,7 @@ export const VipSupportBanner: React.FC<VipSupportBannerProps> = ({ settings }) 
         <p className="flex items-center justify-center gap-1.5 flex-wrap">
           <span>❤️</span>
           <span>Subscribe to our</span>
-          <strong className="text-red-400 font-bold">YouTube Channel ({youtubeText})</strong>
+          <strong className="text-red-400 font-bold">Official YouTube Channel</strong>
           <span>for tutorials, updates & announcements.</span>
         </p>
       </div>

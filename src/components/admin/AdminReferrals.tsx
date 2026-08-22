@@ -293,8 +293,8 @@ export const AdminReferrals: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-900">
-                    {withdrawals.map((w: any) => (
-                      <tr key={w.id} className="hover:bg-zinc-900/50 transition-colors">
+                    {withdrawals.map((w: any, idx: number) => (
+                      <tr key={w.id ? `${w.id}-${idx}` : `w-${idx}`} className="hover:bg-zinc-900/50 transition-colors">
                         <td className="p-3 font-mono font-bold text-yellow-400">{w.id}</td>
                         <td className="p-3 font-bold text-white">{w.username}</td>
                         <td className="p-3 font-black text-yellow-400 text-sm">₹{w.amount.toFixed(2)}</td>

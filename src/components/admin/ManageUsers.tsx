@@ -19,17 +19,32 @@ import {
   Sparkles,
   RefreshCw,
   Users,
+  Copy,
+  Calendar,
+  KeyRound,
+  Lock,
 } from 'lucide-react';
 import { User } from '../../types';
 import { rtdb, ref, onValue, set, remove } from '../../lib/firebaseClient';
 
 function ensureArray<T = any>(data: any): T[] {
   if (!data) return [];
-  if (Array.isArray(data)) return data.filter(Boolean);
-  if (typeof data === 'object') {
-    return Object.values(data).filter(Boolean) as T[];
+  let arr: T[] = [];
+  if (Array.isArray(data)) {
+    arr = data.filter(Boolean);
+  } else if (typeof data === 'object') {
+    arr = Object.values(data).filter(Boolean) as T[];
   }
-  return [];
+  const map = new Map<string, T>();
+  const withoutId: T[] = [];
+  for (const item of arr) {
+    if (item && typeof item === 'object' && 'id' in item && (item as any).id) {
+      map.set(String((item as any).id), item);
+    } else {
+      withoutId.push(item);
+    }
+  }
+  return Array.from(map.values()).concat(withoutId);
 }
 
 interface ManageUsersProps {
@@ -40,6 +55,8 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [passwordUser, setPasswordUser] = useState<User | null>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState('');
   const [confirmBlockUser, setConfirmBlockUser] = useState<User | null>(null);
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<User | null>(null);
   const [showClearAllModal, setShowClearAllModal] = useState(false);
@@ -49,6 +66,7 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [toastMsg, setToastMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [visiblePasswords, setVisiblePasswords] = useState<{ [userId: string]: boolean }>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -89,6 +107,14 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
       ...prev,
       [userId]: !prev[userId],
     }));
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    showToast('success', 'Password copied to clipboard!');
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const showToast = (type: 'success' | 'error', text: string) => {
@@ -141,6 +167,44 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
     }
   };
 
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordUser || !newPasswordValue.trim()) return;
+    setIsSubmitting(true);
+
+    try {
+      const res = await fetch(`/api/admin/users/${passwordUser.id}/password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          password: newPasswordValue.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (rtdb && data.user) {
+          try {
+            await set(ref(rtdb, `users/${data.user.id}`), data.user);
+            await set(ref(rtdb, `smm_store/users/${data.user.id}`), data.user);
+          } catch (rtdbErr: any) {
+            console.warn('Optional client RTDB write warning:', rtdbErr?.message || rtdbErr);
+          }
+        }
+        showToast('success', `Password successfully updated for ${passwordUser.username}!`);
+        setPasswordUser(null);
+        setNewPasswordValue('');
+        fetchUsers();
+      } else {
+        showToast('error', data.error || 'Failed to update password');
+      }
+    } catch (e: any) {
+      console.error(e);
+      showToast('error', e.message || 'Server error while updating password');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleExecuteToggleBlockUser = async () => {
     if (!confirmBlockUser) return;
     const userToToggle = confirmBlockUser;
@@ -165,7 +229,7 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
         }
         showToast(
           'success',
-          `User "${userToToggle.username}" is now ${newStatus.toUpperCase()}`
+          `User ${userToToggle.username} is now ${newStatus === 'blocked' ? 'BLOCKED' : 'ACTIVE'}`
         );
         setConfirmBlockUser(null);
         fetchUsers();
@@ -174,7 +238,7 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
       }
     } catch (e: any) {
       console.error(e);
-      showToast('error', e.message || 'Failed to update user status');
+      showToast('error', e.message || 'Server error while updating status');
     } finally {
       setIsSubmitting(false);
     }
@@ -182,19 +246,24 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
 
   const handleDeleteUser = async () => {
     if (!confirmDeleteUser) return;
+    const userToDelete = confirmDeleteUser;
     setIsSubmitting(true);
 
     try {
-      const res = await fetch(`/api/admin/users/${confirmDeleteUser.id}`, {
+      const res = await fetch(`/api/admin/users/${userToDelete.id}`, {
         method: 'DELETE',
       });
       const data = await res.json();
       if (res.ok && data.success) {
         if (rtdb) {
-          remove(ref(rtdb, `users/${confirmDeleteUser.id}`)).catch(() => {});
-          remove(ref(rtdb, `smm_store/users/${confirmDeleteUser.id}`)).catch(() => {});
+          try {
+            await remove(ref(rtdb, `users/${userToDelete.id}`));
+            await remove(ref(rtdb, `smm_store/users/${userToDelete.id}`));
+          } catch (rtdbErr: any) {
+            console.warn('Optional client RTDB remove warning:', rtdbErr?.message || rtdbErr);
+          }
         }
-        showToast('success', `User "${confirmDeleteUser.username}" removed successfully!`);
+        showToast('success', `User ${userToDelete.username} deleted successfully!`);
         setConfirmDeleteUser(null);
         fetchUsers();
       } else {
@@ -216,7 +285,7 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast('success', data.message || 'All test users removed! App is clean & fresh.');
+        showToast('success', data.message || 'All test users cleared successfully!');
         setShowClearAllModal(false);
         fetchUsers();
       } else {
@@ -231,22 +300,51 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
   };
 
   const fmt = (val: number) => {
-    if (currency === 'INR') return `₹${val.toFixed(2)}`;
+    if (currency === 'INR') {
+      return `₹${val.toFixed(2)}`;
+    }
     return `$${(val / 86).toFixed(2)}`;
   };
 
-  const filteredUsers = users.filter((u) => {
+  const formatJoinedDate = (dateStr?: string) => {
+    if (!dateStr) return 'N/A';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return 'N/A';
+      return d.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  const filteredUsers = React.useMemo(() => {
+    const deduped: User[] = [];
+    const seen = new Set<string>();
+    for (const u of users) {
+      if (!u) continue;
+      const key = u.id ? String(u.id).trim() : (u.email ? String(u.email).toLowerCase().trim() : '');
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      deduped.push(u);
+    }
+
+    if (!searchQuery.trim()) return deduped;
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      u.username.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q) ||
-      (u.whatsappNo && u.whatsappNo.toLowerCase().includes(q)) ||
-      (u.password && u.password.toLowerCase().includes(q)) ||
-      u.id.toLowerCase().includes(q) ||
-      u.role.toLowerCase().includes(q)
+    return deduped.filter(
+      (u) =>
+        (u.username && u.username.toLowerCase().includes(q)) ||
+        (u.email && u.email.toLowerCase().includes(q)) ||
+        (u.whatsappNo && u.whatsappNo.toLowerCase().includes(q)) ||
+        (u.password && u.password.toLowerCase().includes(q)) ||
+        (u.id && u.id.toLowerCase().includes(q))
     );
-  });
+  }, [users, searchQuery]);
 
   const totalRegistered = users.length;
   const activeCount = users.filter((u) => u.status !== 'blocked').length;
@@ -260,10 +358,10 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
         <div>
           <h1 className="text-2xl font-black text-yellow-400 flex items-center gap-2">
             <Wallet className="w-6 h-6 text-yellow-400" />
-            Manage Users, Balances & Signup Details
+            Manage Users, Passwords & Signup Details
           </h1>
           <p className="text-xs text-zinc-400 mt-0.5">
-            View registered user WhatsApp numbers, passwords, emails, manage balances, and toggle access block.
+            Registered user passwords, WhatsApp numbers, email addresses, joined dates & wallet balances.
           </p>
         </div>
 
@@ -372,6 +470,7 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
             <thead>
               <tr className="bg-black border-b border-zinc-800 font-black text-yellow-400 uppercase tracking-wider text-[11px]">
                 <th className="py-3.5 px-4">User Details</th>
+                <th className="py-3.5 px-4">Joined Date</th>
                 <th className="py-3.5 px-4">WhatsApp No</th>
                 <th className="py-3.5 px-4">Password</th>
                 <th className="py-3.5 px-4">Balance</th>
@@ -384,20 +483,21 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
             <tbody className="divide-y divide-zinc-900 font-medium text-zinc-300">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-zinc-500 font-bold">
+                  <td colSpan={9} className="py-12 text-center text-zinc-500 font-bold">
                     <Sparkles className="w-8 h-8 text-yellow-500/40 mx-auto mb-2" />
                     {searchQuery ? `No users matching "${searchQuery}"` : 'No registered users found. Platform is fresh & clean!'}
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((usr) => {
+                filteredUsers.map((usr, idx) => {
                   const isBlocked = usr.status === 'blocked';
                   const isAdmin = usr.role === 'admin' || usr.id === 'usr-admin' || usr.username === 'yourshivamff_';
                   const showPass = !!visiblePasswords[usr.id];
                   const cleanWa = (usr.whatsappNo || '').replace(/\D/g, '');
 
                   return (
-                    <tr key={usr.id} className="hover:bg-zinc-900/60 transition-colors">
+                    <tr key={usr.id ? `${usr.id}-${idx}` : `usr-${idx}`} className="hover:bg-zinc-900/60 transition-colors">
+                      {/* User details */}
                       <td className="py-3.5 px-4">
                         <div className="text-white font-black flex items-center gap-1.5">
                           <UserCheck className="w-4 h-4 text-yellow-400" />
@@ -416,8 +516,16 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
                         <div className="text-[9px] text-zinc-600 font-mono mt-0.5">ID: {usr.id}</div>
                       </td>
 
+                      {/* Join Date Column */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 text-zinc-300 font-mono text-[11px]">
+                          <Calendar className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                          <span>{formatJoinedDate(usr.createdAt)}</span>
+                        </div>
+                      </td>
+
                       {/* WhatsApp Column */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3.5 px-4 whitespace-nowrap">
                         {usr.whatsappNo ? (
                           <a
                             href={`https://wa.me/${cleanWa}`}
@@ -434,31 +542,64 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
                         )}
                       </td>
 
-                      {/* Password Column */}
-                      <td className="py-3.5 px-4 font-mono">
+                      {/* Password Column with Copy & Change button (Clear text for Admin) */}
+                      <td className="py-3.5 px-4 font-mono whitespace-nowrap">
                         {usr.password ? (
-                          <div className="flex items-center gap-2">
-                            <span className="bg-black px-2.5 py-1 rounded-xl border border-zinc-800 text-yellow-300 font-bold text-xs">
-                              {showPass ? usr.password : '••••••••'}
+                          <div className="flex items-center gap-1.5">
+                            <span className="bg-black px-2.5 py-1 rounded-xl border border-yellow-500/30 text-yellow-300 font-bold text-xs select-all">
+                              {visiblePasswords[usr.id] === false ? '••••••••' : usr.password}
                             </span>
                             <button
                               onClick={() => togglePasswordVisibility(usr.id)}
                               className="text-zinc-400 hover:text-yellow-400 p-1 cursor-pointer transition-colors"
-                              title={showPass ? 'Hide Password' : 'Show Password'}
+                              title={visiblePasswords[usr.id] === false ? 'Show Password' : 'Hide Password'}
                             >
-                              {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              {visiblePasswords[usr.id] === false ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                              onClick={() => copyToClipboard(usr.password || '', usr.id)}
+                              className="text-zinc-400 hover:text-emerald-400 p-1 cursor-pointer transition-colors"
+                              title="Copy Password"
+                            >
+                              {copiedId === usr.id ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setPasswordUser(usr);
+                                setNewPasswordValue(usr.password || '');
+                              }}
+                              className="text-zinc-500 hover:text-yellow-400 p-1 cursor-pointer transition-colors"
+                              title="Reset or Change Password"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         ) : (
-                          <span className="text-zinc-600 text-[10px]">No password</span>
+                          <div className="flex items-center gap-1.5 text-zinc-500 text-[10px]">
+                            <span>OAuth Auth</span>
+                            <button
+                              onClick={() => {
+                                setPasswordUser(usr);
+                                setNewPasswordValue('');
+                              }}
+                              className="text-zinc-500 hover:text-yellow-400 p-1 cursor-pointer transition-colors"
+                              title="Set Password"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         )}
                       </td>
 
-                      <td className="py-3.5 px-4 font-mono font-bold text-yellow-400 text-sm">
+                      <td className="py-3.5 px-4 font-mono font-bold text-yellow-400 text-sm whitespace-nowrap">
                         {fmt(usr.balance)}
                       </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-zinc-300">{fmt(usr.totalSpent)}</td>
-                      <td className="py-3.5 px-4">
+                      <td className="py-3.5 px-4 font-mono font-bold text-zinc-300 whitespace-nowrap">{fmt(usr.totalSpent)}</td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
                         {isBlocked ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/30 uppercase flex items-center gap-1 w-fit">
                             <ShieldAlert className="w-3 h-3 text-rose-400" />
@@ -587,14 +728,14 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
                 }`}
               >
                 <MinusCircle className="w-3.5 h-3.5" />
-                <span>Reduce Funds (-)</span>
+                <span>Deduct (-)</span>
               </button>
             </div>
 
-            <form onSubmit={handleUpdateBalance} className="space-y-4 text-xs">
+            <form onSubmit={handleUpdateBalance} className="space-y-4">
               <div>
-                <label className="block text-zinc-300 font-bold uppercase mb-1">
-                  Amount in {currency === 'INR' ? '₹ INR' : '$ USD'}
+                <label className="block text-xs font-bold text-zinc-400 mb-1">
+                  Amount in {currency} ({currency === 'INR' ? '₹' : '$'})
                 </label>
                 <input
                   type="number"
@@ -625,6 +766,59 @@ export const ManageUsers: React.FC<ManageUsersProps> = ({ currency }) => {
                   }`}
                 >
                   {isSubmitting ? 'Updating...' : fundAction === 'add' ? 'Add Funds Now' : 'Deduct Balance Now'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Password Reset / Edit Modal */}
+      {passwordUser && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-zinc-950 border border-yellow-500/40 rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
+            <div className="border-b border-zinc-900 pb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black text-yellow-400 flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-yellow-400" />
+                  <span>Update Password: {passwordUser.username}</span>
+                </h3>
+                <p className="text-[11px] text-zinc-400 mt-0.5">Email: {passwordUser.email}</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleUpdatePassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 mb-1">
+                  New Password for User
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-yellow-400 absolute left-3 top-3.5" />
+                  <input
+                    type="text"
+                    value={newPasswordValue}
+                    onChange={(e) => setNewPasswordValue(e.target.value)}
+                    placeholder="Enter new password..."
+                    className="w-full bg-black border border-zinc-800 rounded-xl pl-9 pr-3 py-2.5 text-yellow-400 font-bold font-mono focus:outline-none focus:border-yellow-400 text-xs"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPasswordUser(null)}
+                  className="px-4 py-2 bg-zinc-800 text-zinc-300 font-bold rounded-xl hover:bg-zinc-700 cursor-pointer text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !newPasswordValue.trim()}
+                  className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-xl cursor-pointer text-xs shadow-lg transition-all"
+                >
+                  {isSubmitting ? 'Saving...' : 'Save Password'}
                 </button>
               </div>
             </form>

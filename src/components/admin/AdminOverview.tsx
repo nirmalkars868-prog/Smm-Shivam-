@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   Zap,
   DollarSign,
@@ -6,49 +6,100 @@ import {
   Layers,
   Clock,
   RefreshCw,
-  ArrowUpRight,
-  ShieldCheck,
   Users,
-  Activity,
   CheckCircle2,
   PieChart,
   BarChart3,
   Calendar,
+  Sparkles,
+  ArrowUpRight,
 } from 'lucide-react';
-import { Order } from '../../types';
+import { Order, User, Service, Provider } from '../../types';
 import { rtdb, ref, onValue } from '../../lib/firebaseClient';
 
 function ensureArray<T = any>(data: any): T[] {
   if (!data) return [];
-  if (Array.isArray(data)) return data.filter(Boolean);
-  if (typeof data === 'object') {
-    return Object.values(data).filter(Boolean) as T[];
+  let arr: T[] = [];
+  if (Array.isArray(data)) {
+    arr = data.filter(Boolean);
+  } else if (typeof data === 'object') {
+    arr = Object.values(data).filter(Boolean) as T[];
   }
-  return [];
+  const map = new Map<string, T>();
+  const withoutId: T[] = [];
+  for (const item of arr) {
+    if (item && typeof item === 'object' && 'id' in item && (item as any).id) {
+      map.set(String((item as any).id), item);
+    } else {
+      withoutId.push(item);
+    }
+  }
+  return Array.from(map.values()).concat(withoutId);
 }
 
 interface AdminOverviewProps {
   currency: string;
 }
 
+type TimeframeOption = 'today' | 'yesterday' | '7d' | '30d' | 'all';
+
+// Helper function to check if a date string falls inside the chosen timeframe
+function isDateInTimeframe(dateStr: string | undefined, timeframe: TimeframeOption): boolean {
+  if (timeframe === 'all') return true;
+  if (!dateStr) return false;
+
+  const itemDate = new Date(dateStr);
+  if (isNaN(itemDate.getTime())) return false;
+
+  const now = new Date();
+
+  if (timeframe === 'today') {
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    return itemDate >= startOfToday;
+  }
+
+  if (timeframe === 'yesterday') {
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0, 0);
+    return itemDate >= startOfYesterday && itemDate < startOfToday;
+  }
+
+  if (timeframe === '7d') {
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    return itemDate >= sevenDaysAgo;
+  }
+
+  if (timeframe === '30d') {
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return itemDate >= thirtyDaysAgo;
+  }
+
+  return true;
+}
+
 // Hook to animate numbers on load or refresh
-function useAnimatedNumber(targetValue: number, duration: number = 1200) {
-  const [currentValue, setCurrentValue] = useState(0);
+function useAnimatedNumber(targetValue: number, duration: number = 800) {
+  const [currentValue, setCurrentValue] = useState(targetValue);
   const startRef = useRef<number | null>(null);
+  const prevValRef = useRef<number>(0);
 
   useEffect(() => {
     let animationFrameId: number;
     startRef.current = null;
+    const startVal = prevValRef.current;
+    const diff = targetValue - startVal;
 
     const animate = (timestamp: number) => {
       if (!startRef.current) startRef.current = timestamp;
       const progress = Math.min((timestamp - startRef.current) / duration, 1);
-      // Easing function: easeOutExpo
       const easedProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
-      setCurrentValue(easedProgress * targetValue);
+      const nextVal = startVal + diff * easedProgress;
+      setCurrentValue(nextVal);
 
       if (progress < 1) {
         animationFrameId = requestAnimationFrame(animate);
+      } else {
+        prevValRef.current = targetValue;
       }
     };
 
@@ -73,7 +124,7 @@ const StatCard: React.FC<{
   accentColor: 'yellow' | 'emerald' | 'rose' | 'sky' | 'amber';
   badgeText?: string;
 }> = ({ title, rawValue, currency, isCurrency = true, prefix = '', suffix = '', subtext, icon: Icon, accentColor, badgeText }) => {
-  const animatedVal = useAnimatedNumber(rawValue, 1400);
+  const animatedVal = useAnimatedNumber(rawValue, 600);
 
   const formatValue = (val: number) => {
     if (isCurrency) {
@@ -91,35 +142,30 @@ const StatCard: React.FC<{
       text: 'text-yellow-400',
       bgIcon: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
       glow: 'shadow-yellow-500/5',
-      bar: 'bg-yellow-400',
     },
     emerald: {
       border: 'border-emerald-500/30 hover:border-emerald-500/60',
       text: 'text-emerald-400',
       bgIcon: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
       glow: 'shadow-emerald-500/5',
-      bar: 'bg-emerald-400',
     },
     rose: {
       border: 'border-rose-500/30 hover:border-rose-500/60',
       text: 'text-rose-400',
       bgIcon: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
       glow: 'shadow-rose-500/5',
-      bar: 'bg-rose-400',
     },
     sky: {
       border: 'border-sky-500/30 hover:border-sky-500/60',
       text: 'text-sky-400',
       bgIcon: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
       glow: 'shadow-sky-500/5',
-      bar: 'bg-sky-400',
     },
     amber: {
       border: 'border-amber-500/30 hover:border-amber-500/60',
       text: 'text-amber-400',
       bgIcon: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
       glow: 'shadow-amber-500/5',
-      bar: 'bg-amber-400',
     },
   }[accentColor];
 
@@ -141,7 +187,7 @@ const StatCard: React.FC<{
 
       {badgeText && (
         <div className="pt-2 border-t border-zinc-900 flex items-center justify-between text-[10px] font-bold">
-          <span className="text-zinc-500 uppercase">Performance</span>
+          <span className="text-zinc-500 uppercase">Period Filter</span>
           <span className={`px-2 py-0.5 rounded-full ${colorStyles.bgIcon} uppercase font-extrabold`}>
             {badgeText}
           </span>
@@ -152,14 +198,16 @@ const StatCard: React.FC<{
 };
 
 export const AdminOverview: React.FC<AdminOverviewProps> = ({ currency }) => {
-  const [stats, setStats] = useState<any>(null);
+  const [users, setUsers] = useState<User[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [timeframe, setTimeframe] = useState<'today' | '7d' | '30d' | 'all'>('all');
+  const [timeframe, setTimeframe] = useState<TimeframeOption>('today');
 
   useEffect(() => {
-    fetchStats();
+    fetchData();
 
     if (rtdb) {
       const storeRef = ref(rtdb, 'smm_store');
@@ -167,34 +215,10 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ currency }) => {
         if (snap.exists()) {
           const val = snap.val();
           if (val) {
-            const usersList = ensureArray(val.users);
-            const ordersList = ensureArray(val.orders);
-            const servicesList = ensureArray(val.services);
-            const providersList = ensureArray(val.providers);
-
-            const totalOrders = ordersList.length;
-            const totalRevenue = ordersList.reduce((sum: number, o: any) => sum + (o.sellingPrice || 0), 0);
-            const totalCost = ordersList.reduce((sum: number, o: any) => sum + (o.providerCost || 0), 0);
-            const totalProfit = totalRevenue - totalCost;
-            const activeServices = servicesList.filter((s: any) => s.status === 'active').length;
-            const totalServices = servicesList.length;
-            const settingsObj = val.settings || {};
-            const configuredProfitMargin = settingsObj.defaultProfitMarginPercentage || 60;
-            const costMarkupPercentage = totalCost > 0 ? Number(((totalProfit / totalCost) * 100).toFixed(1)) : configuredProfitMargin;
-
-            setStats({
-              totalOrders,
-              totalRevenue: Number(totalRevenue.toFixed(2)),
-              totalCost: Number(totalCost.toFixed(2)),
-              totalProfit: Number(totalProfit.toFixed(2)),
-              activeServices,
-              totalServices,
-              configuredProfitMargin,
-              costMarkupPercentage,
-              totalUsers: usersList.length,
-              activeProviders: providersList.filter((p: any) => p.status === 'active').length,
-            });
-            setOrders(ordersList);
+            if (val.users) setUsers(ensureArray(val.users));
+            if (val.orders) setOrders(ensureArray(val.orders));
+            if (val.services) setServices(ensureArray(val.services));
+            if (val.providers) setProviders(ensureArray(val.providers));
             setLoading(false);
           }
         }
@@ -202,71 +226,30 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ currency }) => {
         console.warn('AdminOverview RTDB onValue warning:', err);
       });
 
-      const usersRef = ref(rtdb, 'users');
-      const unsubscribeUsers = onValue(usersRef, (usersSnap) => {
-        if (usersSnap.exists()) {
-          const uVal = usersSnap.val();
-          if (uVal) {
-            const rootUsers = ensureArray(uVal);
-            setStats((prev: any) => {
-              if (!prev) return prev;
-              return {
-                ...prev,
-                totalUsers: Math.max(prev.totalUsers || 0, rootUsers.length),
-              };
-            });
-          }
-        }
-      });
-
       return () => {
         unsubscribeStore();
-        unsubscribeUsers();
       };
     }
   }, [refreshKey]);
 
-  const fetchStats = async () => {
+  const fetchData = async () => {
     setLoading(true);
     try {
-      const [resStats, resOrders] = await Promise.all([
-        fetch('/api/admin/stats'),
+      const [resUsers, resOrders, resServices] = await Promise.all([
+        fetch('/api/admin/users'),
         fetch('/api/admin/orders'),
+        fetch('/api/admin/services'),
       ]);
-      const dataStats = await resStats.json();
+      const dataUsers = await resUsers.json();
       const dataOrders = await resOrders.json();
+      const dataServices = await resServices.json();
 
-      if (dataStats && dataStats.stats) {
-        setStats(dataStats.stats);
-      } else {
-        setStats({
-          totalOrders: 0,
-          totalRevenue: 0,
-          totalCost: 0,
-          totalProfit: 0,
-          activeServices: 0,
-          totalServices: 0,
-          configuredProfitMargin: 60,
-          costMarkupPercentage: 60,
-          totalUsers: 0,
-          activeProviders: 0,
-        });
-      }
-      setOrders((dataOrders && dataOrders.orders) || []);
+      setUsers(dataUsers.users || []);
+      setOrders(dataOrders.orders || []);
+      setServices(dataServices.services || []);
+      setProviders(dataServices.providers || []);
     } catch (e) {
-      console.error('Error fetching admin stats:', e);
-      setStats({
-        totalOrders: 0,
-        totalRevenue: 0,
-        totalCost: 0,
-        totalProfit: 0,
-        activeServices: 0,
-        totalServices: 0,
-        configuredProfitMargin: 60,
-        costMarkupPercentage: 60,
-        totalUsers: 0,
-        activeProviders: 0,
-      });
+      console.error('Error fetching admin data:', e);
     } finally {
       setLoading(false);
     }
@@ -283,24 +266,73 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ currency }) => {
     setRefreshKey((prev) => prev + 1);
   };
 
-  if (loading || !stats) {
+  // Compute Timeframe-Filtered Data
+  const filteredUsers = useMemo(() => {
+    const deduped: User[] = [];
+    const seen = new Set<string>();
+    for (const u of users) {
+      if (!u) continue;
+      const key = u.id ? String(u.id).trim() : (u.email ? String(u.email).toLowerCase().trim() : '');
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      deduped.push(u);
+    }
+    return deduped.filter((u) => isDateInTimeframe(u.createdAt, timeframe));
+  }, [users, timeframe]);
+
+  const filteredOrders = useMemo(() => {
+    const deduped: Order[] = [];
+    const seen = new Set<string>();
+    for (const o of orders) {
+      if (!o) continue;
+      const key = o.id ? String(o.id).trim() : `ord-${deduped.length}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(o);
+    }
+    return deduped.filter((o) => isDateInTimeframe(o.createdAt, timeframe));
+  }, [orders, timeframe]);
+
+  // Financial calculations for the selected timeframe
+  const totalRevenue = useMemo(() => {
+    return filteredOrders.reduce((sum, o) => sum + (o.sellingPrice || 0), 0);
+  }, [filteredOrders]);
+
+  const totalCost = useMemo(() => {
+    return filteredOrders.reduce((sum, o) => sum + (o.providerCost || 0), 0);
+  }, [filteredOrders]);
+
+  const totalProfit = useMemo(() => {
+    return Math.max(0, totalRevenue - totalCost);
+  }, [totalRevenue, totalCost]);
+
+  const costMarkupPercent = useMemo(() => {
+    return totalCost > 0 ? ((totalProfit / totalCost) * 100).toFixed(1) : '20.0';
+  }, [totalProfit, totalCost]);
+
+  const revenueMarginPercent = useMemo(() => {
+    return totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0.0';
+  }, [totalProfit, totalRevenue]);
+
+  const timeframeLabels: Record<TimeframeOption, string> = {
+    today: 'Today (00:00 - Now)',
+    yesterday: 'Yesterday',
+    '7d': 'Last 7 Days',
+    '30d': 'Last 30 Days',
+    all: 'All Time (Lifetime)',
+  };
+
+  if (loading && users.length === 0 && orders.length === 0) {
     return (
       <div className="bg-zinc-950 border border-yellow-500/20 rounded-3xl p-12 text-center space-y-4 shadow-2xl max-w-4xl mx-auto my-8">
         <div className="w-12 h-12 rounded-full border-4 border-yellow-400 border-t-transparent animate-spin mx-auto" />
         <h3 className="text-lg font-black text-yellow-400 uppercase tracking-wider">
-          Initializing Divine Profit Engine...
+          Loading Real-Time Analytics...
         </h3>
-        <p className="text-xs text-zinc-400">Syncing live provider margins, orders & sales analytics</p>
+        <p className="text-xs text-zinc-400">Syncing registered users, live orders & financial margin data</p>
       </div>
     );
   }
-
-  const revenue = stats.totalRevenue || 0;
-  const cost = stats.totalCost || 0;
-  const profit = stats.totalProfit || 0;
-  const configuredMargin = stats.configuredProfitMargin || 60;
-  const costMarkupPercent = cost > 0 ? ((profit / cost) * 100).toFixed(1) : configuredMargin.toString();
-  const revenueMarginPercent = revenue > 0 ? ((profit / revenue) * 100).toFixed(1) : '0.0';
 
   return (
     <div key={refreshKey} className="space-y-6 max-w-7xl mx-auto">
@@ -310,94 +342,133 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ currency }) => {
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
             <h1 className="text-2xl sm:text-3xl font-black text-yellow-400 flex items-center gap-2 tracking-tight">
-              <span>Admin Overview & Financial Analytics</span>
+              <span>Admin Overview & Live Analytics</span>
             </h1>
           </div>
           <p className="text-xs text-zinc-400 font-medium">
-            Live profit calculation, automated provider cost breakdown, and real-time ticker statistics.
+            Real registered user counts, live order metrics, provider costs & dynamic time filtering.
           </p>
         </div>
 
         {/* Timeframe & Animated Refresh Trigger */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="bg-black border border-zinc-800 rounded-2xl p-1 flex items-center gap-1 text-xs font-bold">
-            {(['today', '7d', '30d', 'all'] as const).map((tf) => (
-              <button
-                key={tf}
-                onClick={() => setTimeframe(tf)}
-                className={`px-3 py-1.5 rounded-xl uppercase transition-all cursor-pointer ${
-                  timeframe === tf
-                    ? 'bg-yellow-500 text-black font-black shadow-md'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {tf === 'all' ? 'All Time' : tf}
-              </button>
-            ))}
+          <div className="bg-black border border-zinc-800 rounded-2xl p-1 flex items-center gap-1 text-xs font-bold shadow-inner">
+            {(['today', 'yesterday', '7d', '30d', 'all'] as const).map((tf) => {
+              const label =
+                tf === 'today'
+                  ? 'Today'
+                  : tf === 'yesterday'
+                  ? 'Yesterday'
+                  : tf === '7d'
+                  ? '7 Days'
+                  : tf === '30d'
+                  ? '30 Days'
+                  : 'All Time';
+              return (
+                <button
+                  key={tf}
+                  id={`filter-${tf}-btn`}
+                  onClick={() => setTimeframe(tf)}
+                  className={`px-3 py-1.5 rounded-xl uppercase font-black text-[11px] transition-all cursor-pointer ${
+                    timeframe === tf
+                      ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20 scale-100'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
 
           <button
             onClick={handleRefresh}
-            className="bg-yellow-500 hover:bg-yellow-400 text-black font-black px-4 py-2.5 rounded-2xl shadow-xl shadow-yellow-500/20 transition-all flex items-center gap-2 text-xs uppercase tracking-wider cursor-pointer active:scale-95"
+            className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-yellow-400 font-black px-3.5 py-2.5 rounded-2xl shadow-xl transition-all flex items-center gap-2 text-xs uppercase tracking-wider cursor-pointer active:scale-95"
+            title="Refresh database records"
           >
-            <RefreshCw className="w-4 h-4 text-black animate-spin" style={{ animationDuration: '3s' }} />
-            <span>Recount Analytics</span>
+            <RefreshCw className="w-3.5 h-3.5 text-yellow-400" />
+            <span>Refresh</span>
           </button>
         </div>
       </div>
 
-      {/* KPI Ticker Cards Grid with Animated Live Counters */}
+      {/* Active Timeframe Notice Pill Banner */}
+      <div className="bg-gradient-to-r from-yellow-500/10 via-amber-500/5 to-yellow-500/10 border border-yellow-500/30 rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-lg">
+        <div className="flex items-center gap-2 text-yellow-400 text-xs font-bold">
+          <Calendar className="w-4 h-4 text-yellow-400 shrink-0" />
+          <span>
+            Selected Period:{' '}
+            <strong className="text-white uppercase font-black tracking-wide">
+              {timeframeLabels[timeframe]}
+            </strong>
+          </span>
+        </div>
+        <div className="flex items-center gap-4 text-xs font-mono font-bold text-zinc-300">
+          <span>
+            New Users: <strong className="text-yellow-400">{filteredUsers.length}</strong> (Total All-Time: {users.length})
+          </span>
+          <span>
+            Orders: <strong className="text-yellow-400">{filteredOrders.length}</strong> (Total All-Time: {orders.length})
+          </span>
+        </div>
+      </div>
+
+      {/* KPI Ticker Cards Grid with Animated Live Counters for the selected timeframe */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard
-          title="Total Registered Users"
-          rawValue={stats.totalUsers || 0}
+          title={timeframe === 'all' ? 'Total Registered Users' : 'Users Registered'}
+          rawValue={timeframe === 'all' ? users.length : filteredUsers.length}
           currency={currency}
           isCurrency={false}
-          subtext="Total registered panel users"
+          subtext={
+            timeframe === 'all'
+              ? `${users.length} total panel registered users`
+              : `${filteredUsers.length} joined in ${timeframeLabels[timeframe]} (Total: ${users.length})`
+          }
           icon={Users}
           accentColor="amber"
-          badgeText="TOTAL USERS"
+          badgeText={timeframe.toUpperCase()}
         />
 
         <StatCard
-          title="Total Customer Revenue"
-          rawValue={revenue}
+          title="Customer Revenue"
+          rawValue={totalRevenue}
           currency={currency}
-          subtext="Gross sales across all user orders"
+          subtext={`Gross sales in ${timeframeLabels[timeframe]}`}
           icon={DollarSign}
           accentColor="yellow"
-          badgeText="GROSS SALES"
+          badgeText={timeframe.toUpperCase()}
         />
 
         <StatCard
           title="Provider API Cost"
-          rawValue={cost}
+          rawValue={totalCost}
           currency={currency}
-          subtext="Net cost paid to connected SMM providers"
+          subtext={`Net API cost paid for ${filteredOrders.length} orders`}
           icon={Clock}
           accentColor="rose"
-          badgeText="NET OUTFLOW"
+          badgeText={timeframe.toUpperCase()}
         />
 
         <StatCard
           title="Net Admin Profit"
-          rawValue={profit}
+          rawValue={totalProfit}
           currency={currency}
-          subtext={`Configured Margin: +${costMarkupPercent}% (Rev Share: ${revenueMarginPercent}%)`}
+          subtext={`Profit Margin: +${costMarkupPercent}% (Rev Share: ${revenueMarginPercent}%)`}
           icon={TrendingUp}
           accentColor="emerald"
-          badgeText={`MARGIN: +${costMarkupPercent}%`}
+          badgeText={`PROFIT: +${costMarkupPercent}%`}
         />
 
         <StatCard
-          title="Total Orders Processed"
-          rawValue={stats.totalOrders || 0}
+          title="Orders Processed"
+          rawValue={filteredOrders.length}
           currency={currency}
           isCurrency={false}
-          subtext={`${stats.activeServices || 0} active imported services`}
+          subtext={`${filteredOrders.length} orders in ${timeframeLabels[timeframe]} (Total: ${orders.length})`}
           icon={Layers}
           accentColor="sky"
-          badgeText="LIVE ORDERS"
+          badgeText={timeframe.toUpperCase()}
         />
       </div>
 
@@ -406,10 +477,10 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ currency }) => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-900 pb-3">
           <div className="flex items-center gap-2 text-yellow-400 font-black text-sm uppercase">
             <PieChart className="w-4 h-4 text-yellow-400" />
-            <span>Revenue vs Provider Cost vs Net Profit Distribution</span>
+            <span>Financial Distribution for {timeframeLabels[timeframe]}</span>
           </div>
           <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full">
-            Admin Profit Margin: +{costMarkupPercent}% Markup
+            Margin Markup: +{costMarkupPercent}%
           </span>
         </div>
 
@@ -417,14 +488,14 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ currency }) => {
         <div className="space-y-2">
           <div className="h-5 w-full bg-black rounded-full overflow-hidden flex border border-zinc-800 p-0.5">
             <div
-              style={{ width: `${revenue > 0 ? (cost / revenue) * 100 : 50}%` }}
-              className="bg-rose-500 h-full rounded-l-full transition-all duration-1000 flex items-center justify-center text-[9px] font-black text-white"
+              style={{ width: `${totalRevenue > 0 ? (totalCost / totalRevenue) * 100 : 50}%` }}
+              className="bg-rose-500 h-full rounded-l-full transition-all duration-700 flex items-center justify-center text-[9px] font-black text-white"
             >
               Cost
             </div>
             <div
-              style={{ width: `${revenue > 0 ? (profit / revenue) * 100 : 50}%` }}
-              className="bg-emerald-500 h-full rounded-r-full transition-all duration-1000 flex items-center justify-center text-[9px] font-black text-black"
+              style={{ width: `${totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 50}%` }}
+              className="bg-emerald-500 h-full rounded-r-full transition-all duration-700 flex items-center justify-center text-[9px] font-black text-black"
             >
               Profit
             </div>
@@ -432,24 +503,26 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ currency }) => {
           <div className="flex justify-between text-xs text-zinc-400 font-bold px-1">
             <span className="flex items-center gap-1.5 text-rose-400">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-              <span>Provider Cost: {fmt(cost)}</span>
+              <span>Provider Cost: {fmt(totalCost)}</span>
             </span>
             <span className="flex items-center gap-1.5 text-emerald-400">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-              <span>Net Profit: +{fmt(profit)}</span>
+              <span>Net Profit: +{fmt(totalProfit)}</span>
             </span>
           </div>
         </div>
       </div>
 
-      {/* Orders Table Breakdown */}
+      {/* Orders Table Breakdown for selected timeframe */}
       <div className="bg-zinc-950 border border-yellow-500/20 rounded-3xl p-6 shadow-2xl space-y-4">
         <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
           <h3 className="text-sm font-black text-yellow-400 flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-yellow-400" />
-            <span>Recent Orders Profit & Cost Execution Log</span>
+            <span>Orders Log for {timeframeLabels[timeframe]}</span>
           </h3>
-          <span className="text-xs font-bold text-zinc-400">Showing last 10 transactions</span>
+          <span className="text-xs font-bold text-zinc-400">
+            Showing {Math.min(filteredOrders.length, 15)} of {filteredOrders.length} orders
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -457,32 +530,53 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ currency }) => {
             <thead>
               <tr className="bg-black border-b border-zinc-800 font-black text-yellow-400 uppercase tracking-wider text-[11px]">
                 <th className="py-3.5 px-4">Order ID</th>
+                <th className="py-3.5 px-4">Date & Time</th>
                 <th className="py-3.5 px-4">Customer</th>
                 <th className="py-3.5 px-4">Service</th>
                 <th className="py-3.5 px-4">Qty</th>
-                <th className="py-3.5 px-4">Customer Price</th>
+                <th className="py-3.5 px-4">Price</th>
                 <th className="py-3.5 px-4">Provider Cost</th>
-                <th className="py-3.5 px-4 text-emerald-400">Profit Margin</th>
+                <th className="py-3.5 px-4 text-emerald-400">Profit</th>
                 <th className="py-3.5 px-4">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-900 font-medium text-zinc-300">
-              {orders.slice(0, 10).map((ord) => (
-                <tr key={ord.id} className="hover:bg-zinc-900/60 transition-colors">
-                  <td className="py-3.5 px-4 font-mono font-black text-yellow-400">{ord.id}</td>
-                  <td className="py-3.5 px-4 font-bold text-white">{ord.userName}</td>
-                  <td className="py-3.5 px-4 text-zinc-300 font-medium max-w-xs truncate">{ord.serviceName}</td>
-                  <td className="py-3.5 px-4 font-mono font-bold text-zinc-400">{ord.quantity.toLocaleString()}</td>
-                  <td className="py-3.5 px-4 font-mono font-black text-white">{fmt(ord.sellingPrice)}</td>
-                  <td className="py-3.5 px-4 font-mono font-bold text-rose-400">{fmt(ord.providerCost)}</td>
-                  <td className="py-3.5 px-4 font-mono font-black text-emerald-400">+{fmt(ord.profit)}</td>
-                  <td className="py-3.5 px-4">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 uppercase">
-                      {ord.status}
-                    </span>
+              {filteredOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-8 text-center text-zinc-500 font-bold">
+                    <Sparkles className="w-6 h-6 text-yellow-500/30 mx-auto mb-1.5" />
+                    No orders placed in this period ({timeframeLabels[timeframe]}).
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredOrders.slice(0, 15).map((ord, idx) => {
+                  const dateStr = ord.createdAt
+                    ? new Date(ord.createdAt).toLocaleDateString('en-GB', {
+                        day: '2-digit',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : 'N/A';
+                  return (
+                    <tr key={ord.id ? `${ord.id}-${idx}` : `ord-${idx}`} className="hover:bg-zinc-900/60 transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-black text-yellow-400">{ord.id}</td>
+                      <td className="py-3.5 px-4 font-mono text-zinc-400 text-[11px] whitespace-nowrap">{dateStr}</td>
+                      <td className="py-3.5 px-4 font-bold text-white">{ord.userName}</td>
+                      <td className="py-3.5 px-4 text-zinc-300 font-medium max-w-xs truncate">{ord.serviceName}</td>
+                      <td className="py-3.5 px-4 font-mono font-bold text-zinc-400">{ord.quantity.toLocaleString()}</td>
+                      <td className="py-3.5 px-4 font-mono font-black text-white">{fmt(ord.sellingPrice)}</td>
+                      <td className="py-3.5 px-4 font-mono font-bold text-rose-400">{fmt(ord.providerCost)}</td>
+                      <td className="py-3.5 px-4 font-mono font-black text-emerald-400">+{fmt(ord.profit)}</td>
+                      <td className="py-3.5 px-4">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 uppercase">
+                          {ord.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

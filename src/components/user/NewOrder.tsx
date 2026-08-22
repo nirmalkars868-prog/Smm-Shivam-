@@ -25,6 +25,7 @@ interface NewOrderProps {
   userBalance: number;
   currency: string;
   settings?: AdminSettings;
+  childPanelId?: string;
   onOrderPlaced: () => void;
 }
 
@@ -35,6 +36,7 @@ export const NewOrder: React.FC<NewOrderProps> = ({
   userBalance,
   currency,
   settings,
+  childPanelId,
   onOrderPlaced,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -77,21 +79,19 @@ export const NewOrder: React.FC<NewOrderProps> = ({
       }
     });
 
-    // Also include any explicitly configured categories
+    // Also include all explicitly configured admin categories
     categories.forEach((cat) => {
-      if (cat.name) {
+      if (cat && cat.name) {
         const key = cat.name.trim().toLowerCase();
         if (!catMap.has(key)) {
           const count = services.filter(
             (s) => s.status === 'active' && s.category.trim().toLowerCase() === key
           ).length;
-          if (count > 0) {
-            catMap.set(key, {
-              id: cat.id,
-              name: cat.name.trim(),
-              count,
-            });
-          }
+          catMap.set(key, {
+            id: cat.id,
+            name: cat.name.trim(),
+            count,
+          });
         }
       }
     });
@@ -199,6 +199,7 @@ export const NewOrder: React.FC<NewOrderProps> = ({
           serviceId: currentService.id,
           link: link.trim(),
           quantity: Number(quantity),
+          childPanelId: childPanelId || currentUser?.childPanelId,
         }),
       });
 

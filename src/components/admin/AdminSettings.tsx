@@ -16,6 +16,11 @@ import {
   RefreshCw,
   Sparkles,
   MessageCircle,
+  Megaphone,
+  Flame,
+  Info,
+  Eye,
+  Layers,
 } from 'lucide-react';
 import { AdminSettings as AdminSettingsType } from '../../types';
 import { rtdb, ref, onValue, set, cleanForFirebase } from '../../lib/firebaseClient';
@@ -99,6 +104,14 @@ export const AdminSettings: React.FC = () => {
     minDepositINR: 10,
     exchangeRateINR: 86,
     notice: '⚡ Welcome to SMM SHIVAM Panel! Scan QR Code to add funds instantly via UPI & WhatsApp auto-verification.',
+    popupNoticeEnabled: true,
+    popupNoticeTitle: '🔥 SPECIAL ANNOUNCEMENT & OFFER',
+    popupNoticeText: 'Welcome to SMM SHIVAM Panel! Get extra bonuses on UPI Add Funds, lightning fast server speeds, and 24/7 WhatsApp customer support.',
+    popupNoticeType: 'offer',
+    popupNoticeButtonText: 'Add Funds Now',
+    popupNoticeButtonLink: '#add-funds',
+    topAlertBarEnabled: true,
+    topAlertBarText: '⚡ SMM SHIVAM: Instant UPI Deposits Live | WhatsApp Support: +91 9516862495 | Best High-Speed SMM Services!',
     currency: 'USD',
     currencySymbol: '$',
     theme: 'default-dark',
@@ -516,6 +529,176 @@ export const AdminSettings: React.FC = () => {
               className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-yellow-400"
               required
             />
+          </div>
+        </div>
+
+        {/* User Login Pop-up Announcement & Top Broadcast Alert Section */}
+        <div className="bg-zinc-950 border border-yellow-500/30 rounded-3xl p-6 shadow-xl space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-900 pb-3">
+            <div>
+              <h2 className="text-sm font-black uppercase text-yellow-400 flex items-center gap-2">
+                <Megaphone className="w-4 h-4 text-yellow-400" />
+                <span>Special Announcement & User Login Pop-up Broadcast</span>
+              </h2>
+              <p className="text-[11px] text-zinc-400 mt-0.5">
+                Save special notices, instructions, or offers here. When users log in, this announcement pops up immediately at the top/center of their screen!
+              </p>
+            </div>
+
+            {/* Pop-up Enable/Disable Toggle */}
+            <div className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 px-3.5 py-1.5 rounded-2xl">
+              <div className="flex items-center gap-1.5">
+                <Flame className={`w-4 h-4 ${settings.popupNoticeEnabled ? 'text-yellow-400 animate-pulse' : 'text-zinc-500'}`} />
+                <span className="text-xs font-bold text-zinc-200">Pop-up on Login</span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.popupNoticeEnabled ?? true}
+                  onChange={(e) => setSettings({ ...settings, popupNoticeEnabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-yellow-500"></div>
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-zinc-300 uppercase mb-1">
+                Announcement Headline / Title
+              </label>
+              <input
+                type="text"
+                value={settings.popupNoticeTitle || ''}
+                onChange={(e) => setSettings({ ...settings, popupNoticeTitle: e.target.value })}
+                className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-2.5 text-xs font-bold text-yellow-400 focus:outline-none focus:border-yellow-400"
+                placeholder="e.g. 🔥 SPECIAL OFFER: 10% BONUS ON UPI ADD FUNDS!"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-zinc-300 uppercase mb-1">
+                Notice Visual Style / Badge
+              </label>
+              <select
+                value={settings.popupNoticeType || 'offer'}
+                onChange={(e) => setSettings({ ...settings, popupNoticeType: e.target.value as any })}
+                className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-yellow-400"
+              >
+                <option value="offer">🔥 Special Offer / Hot Deal (Gold & Amber)</option>
+                <option value="info">ℹ️ Official Announcement / News (Cyan Blue)</option>
+                <option value="warning">⚠️ Important Notice / Reminder (Amber Warning)</option>
+                <option value="alert">🚨 Urgent Update / Server Status (Rose Red)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Announcement Textarea */}
+          <div>
+            <label className="block text-xs font-bold text-zinc-300 uppercase mb-1 flex items-center justify-between">
+              <span>Announcement Message / Special Text (Tez me likhe)</span>
+              <span className="text-[10px] text-zinc-500 font-normal">Supports multi-line text & emojis</span>
+            </label>
+            <textarea
+              rows={4}
+              value={settings.popupNoticeText || ''}
+              onChange={(e) => setSettings({ ...settings, popupNoticeText: e.target.value })}
+              className="w-full bg-black border border-zinc-800 rounded-xl p-3 text-xs text-zinc-200 font-medium leading-relaxed focus:outline-none focus:border-yellow-400"
+              placeholder="Yaha par koi bhi special notice, update, UPI discount offer, ya zaruri instruction likh kar save karein..."
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-zinc-300 uppercase mb-1">
+                Action Button Text
+              </label>
+              <input
+                type="text"
+                value={settings.popupNoticeButtonText || ''}
+                onChange={(e) => setSettings({ ...settings, popupNoticeButtonText: e.target.value })}
+                className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-yellow-400"
+                placeholder="e.g. Add Funds Now or Order Now"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-zinc-300 uppercase mb-1">
+                Action Button Link / Target
+              </label>
+              <input
+                type="text"
+                value={settings.popupNoticeButtonLink || ''}
+                onChange={(e) => setSettings({ ...settings, popupNoticeButtonLink: e.target.value })}
+                className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-2.5 text-xs font-mono text-emerald-400 focus:outline-none focus:border-yellow-400"
+                placeholder="e.g. #add-funds, #services, or https://wa.me/919516862495"
+              />
+            </div>
+          </div>
+
+          {/* Top Marquee Alert Bar Toggle & Text */}
+          <div className="pt-3 border-t border-zinc-900 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-bold text-zinc-300 uppercase block">
+                  Top Persistent Announcement Banner
+                </label>
+                <p className="text-[10px] text-zinc-500">
+                  Shows a continuous marquee/alert strip at the top of the customer dashboard.
+                </p>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.topAlertBarEnabled ?? true}
+                  onChange={(e) => setSettings({ ...settings, topAlertBarEnabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-yellow-500"></div>
+              </label>
+            </div>
+
+            {settings.topAlertBarEnabled && (
+              <input
+                type="text"
+                value={settings.topAlertBarText || ''}
+                onChange={(e) => setSettings({ ...settings, topAlertBarText: e.target.value })}
+                className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-yellow-300 font-medium focus:outline-none focus:border-yellow-400"
+                placeholder="e.g. ⚡ SMM SHIVAM: Instant UPI Deposits Live | WhatsApp Support: +91 9516862495 | Best High-Speed SMM Services!"
+              />
+            )}
+          </div>
+
+          {/* Live Preview Box */}
+          <div className="bg-black/60 border border-yellow-500/20 rounded-2xl p-4 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-black uppercase text-zinc-400">
+              <span className="flex items-center gap-1.5 text-yellow-400">
+                <Eye className="w-3.5 h-3.5" />
+                <span>Live Customer Pop-up Preview</span>
+              </span>
+              <span className="text-[10px] text-zinc-500">How users will see this on login</span>
+            </div>
+
+            <div className="p-4 bg-zinc-950 border border-yellow-500/40 rounded-2xl space-y-2 shadow-lg">
+              <div className="flex items-center gap-2">
+                <span className="bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full uppercase">
+                  {settings.popupNoticeType || 'offer'}
+                </span>
+                <span className="text-xs font-black text-white">{settings.popupNoticeTitle || 'Announcement Title'}</span>
+              </div>
+              <p className="text-[11px] text-zinc-300 whitespace-pre-wrap leading-relaxed">
+                {settings.popupNoticeText || 'Your announcement message will appear here for all logged-in users.'}
+              </p>
+              {settings.popupNoticeButtonText && (
+                <div className="pt-1">
+                  <span className="inline-block px-3 py-1 bg-yellow-500 text-black text-[10px] font-black rounded-lg uppercase">
+                    {settings.popupNoticeButtonText} →
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

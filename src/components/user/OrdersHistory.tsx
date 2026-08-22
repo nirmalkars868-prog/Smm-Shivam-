@@ -113,14 +113,14 @@ export const OrdersHistory: React.FC<OrdersHistoryProps> = ({ orders, currency }
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-medium">
               {filteredOrders.length > 0 ? (
-                filteredOrders.map((ord) => {
+                filteredOrders.map((ord, idx) => {
                   const priceDisp =
                     currency === 'INR'
                       ? `₹${ord.sellingPrice.toFixed(2)}`
                       : `$${(ord.sellingPrice / 86).toFixed(4)}`;
 
                   return (
-                    <tr key={ord.id} className="hover:bg-slate-800/40 transition-colors">
+                    <tr key={ord.id ? `${ord.id}-${idx}` : `ord-${idx}`} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4 font-mono text-slate-300 font-bold">
                         {ord.id}
                       </td>

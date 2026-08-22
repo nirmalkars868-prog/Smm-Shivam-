@@ -1,10 +1,11 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { db } from './src/db/store';
 import { SMMProviderClient } from './src/services/smmProvider';
 import { ServiceSyncEngine } from './src/services/serviceSync';
-import { Order, Ticket } from './src/types';
+import { Order, Ticket, ChildPanel } from './src/types';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -28,21 +29,51 @@ app.get('/api/categories', (req, res) => {
   res.json({ categories: db.getCategories() });
 });
 
-// 2. Public / User Services & Categories
+// 2. Public / User Services & Categories (with Child Panel support)
 app.get('/api/services', (req, res) => {
   db.cleanEmptyCategories();
-  const categories = db.getCategories();
-  const services = db.getServices(true); // only active services
-  const settings = db.getSettings();
+  const { panel } = req.query;
+  const panelQuery = panel ? String(panel).trim() : undefined;
+
+  let categories = db.getCategories();
+  let services = db.getServices(true);
+  let resolved = db.resolvePanelBranding(panelQuery);
+
+  if (panelQuery && resolved.isChildPanel && resolved.childPanel) {
+    services = db.getChildPanelServices(resolved.childPanel.id, true);
+    if (resolved.childPanel.allowedCategoryIds && resolved.childPanel.allowedCategoryIds.length > 0) {
+      categories = categories.filter((c) => resolved.childPanel!.allowedCategoryIds!.includes(c.name) || resolved.childPanel!.allowedCategoryIds!.includes(c.id));
+    }
+  }
 
   res.json({
     categories,
     services,
-    settings,
+    settings: resolved.settings,
+    isChildPanel: resolved.isChildPanel,
+    childPanel: resolved.childPanel,
+    branding: resolved.branding,
+    contact: resolved.contact,
+    payment: resolved.payment,
   });
 });
 
-// 3. Place Order
+// 2b. Public Child Panel White-Label Info Endpoint
+app.get('/api/panel/info', (req, res) => {
+  const { panel } = req.query;
+  const panelQuery = panel ? String(panel).trim() : undefined;
+  const resolved = db.resolvePanelBranding(panelQuery);
+  res.json(resolved);
+});
+
+app.get('/api/panel-branding', (req, res) => {
+  const { panel } = req.query;
+  const panelQuery = panel ? String(panel).trim() : undefined;
+  const resolved = db.resolvePanelBranding(panelQuery);
+  res.json(resolved);
+});
+
+// 3. Place Order (with Child Panel Profit Split & API Isolation)
 app.post('/api/orders', async (req, res) => {
   try {
     const {
@@ -54,6 +85,7 @@ app.post('/api/orders', async (req, res) => {
       username,
       whatsappNo,
       userBalance,
+      childPanelId,
     } = req.body;
 
     if (!serviceId || !link || !quantity || Number(quantity) <= 0) {
@@ -91,6 +123,7 @@ app.post('/api/orders', async (req, res) => {
         balance: typeof userBalance === 'number' ? userBalance : 0,
         totalSpent: 0,
         role: 'user',
+        childPanelId: childPanelId || undefined,
         apiKey: 'usr_api_key_' + Math.random().toString(36).substring(2, 11),
         status: 'active',
         referralCode: refCode,
@@ -112,10 +145,47 @@ app.post('/api/orders', async (req, res) => {
       return res.status(403).json({ error: 'Your account is blocked by Admin. You cannot place new orders.' });
     }
 
+    // Determine Child Panel association
+    const effectiveChildPanelId = childPanelId || user.childPanelId;
+    let childPanel: ChildPanel | undefined = undefined;
+    if (effectiveChildPanelId) {
+      childPanel = db.getChildPanel(effectiveChildPanelId);
+    }
+
+    if (childPanel && childPanel.status === 'disabled') {
+      return res.status(403).json({
+        error: 'This child panel is temporarily disabled by Main Admin. Please contact support.',
+      });
+    }
+
     // Financial calculations
     const qtyMultiplier = numQty / 1000;
-    const totalSellingPrice = Number((service.sellingRate * qtyMultiplier).toFixed(4));
-    const totalProviderCost = Number((service.providerRate * qtyMultiplier).toFixed(4));
+    const baseAdminSellingRate = service.sellingRate;
+    const baseProviderRate = service.providerRate;
+
+    let effectiveSellingRate = baseAdminSellingRate;
+    let childOwnerProfit = 0;
+    let mainAdminProfit = Number(((baseAdminSellingRate - baseProviderRate) * qtyMultiplier).toFixed(4));
+
+    if (childPanel) {
+      // Calculate child panel customized selling rate
+      const defaultMargin = childPanel.pricing?.defaultMarginPercent ?? 20;
+      const customPrices = childPanel.pricing?.serviceCustomPrices || {};
+      const custom = customPrices[service.id];
+
+      if (custom && typeof custom.sellingRate === 'number' && custom.sellingRate > 0) {
+        effectiveSellingRate = custom.sellingRate;
+      } else {
+        effectiveSellingRate = Number((baseAdminSellingRate * (1 + defaultMargin / 100)).toFixed(4));
+      }
+
+      const totalChildCustomerCost = Number((effectiveSellingRate * qtyMultiplier).toFixed(4));
+      const totalMainAdminCost = Number((baseAdminSellingRate * qtyMultiplier).toFixed(4));
+      childOwnerProfit = Number(Math.max(0, totalChildCustomerCost - totalMainAdminCost).toFixed(4));
+    }
+
+    const totalSellingPrice = Number((effectiveSellingRate * qtyMultiplier).toFixed(4));
+    const totalProviderCost = Number((baseProviderRate * qtyMultiplier).toFixed(4));
     const netProfit = Number((totalSellingPrice - totalProviderCost).toFixed(4));
 
     if (user.balance < totalSellingPrice) {
@@ -124,35 +194,67 @@ app.post('/api/orders', async (req, res) => {
       });
     }
 
-    // Get provider info
-    const provider = db.getProvider(service.providerId);
+    // Order API Routing: Check if Child Panel uses Option B (Custom Own Provider API)
     let providerOrderId: string | undefined = undefined;
+    let providerApiUsed = 'Main Admin Provider';
 
-    if (provider && provider.status === 'active') {
+    if (childPanel && !childPanel.apiSettings?.useMainAdminApi && childPanel.apiSettings?.apiUrl && childPanel.apiSettings?.apiKey) {
+      // Option B: Child panel forwards order to their own external API provider
       try {
-        const providerClient = new SMMProviderClient(provider.apiUrl, provider.apiKey);
-        const providerRes = await providerClient.placeOrder(
+        const customClient = new SMMProviderClient(childPanel.apiSettings.apiUrl, childPanel.apiSettings.apiKey);
+        const providerRes = await customClient.placeOrder(
           service.providerServiceId,
           link,
           quantity
         );
         if (providerRes.error) {
           return res.status(400).json({
-            error: `Provider API Error: ${providerRes.error}. Your order was not placed and balance remains unchanged.`,
+            error: `Child Panel Provider API Error: ${providerRes.error}. Order was not placed.`,
           });
         }
         if (providerRes.orderId) {
           providerOrderId = providerRes.orderId;
+          providerApiUsed = childPanel.apiSettings.apiProviderName || 'Child Panel Custom API';
         }
-      } catch (prvErr: any) {
+      } catch (cpApiErr: any) {
         return res.status(500).json({
-          error: `Failed to connect to provider API: ${prvErr.message || prvErr}. Balance refunded.`,
+          error: `Failed to connect to Child Panel's provider API: ${cpApiErr.message || cpApiErr}`,
         });
+      }
+    } else {
+      // Option A (Default): Forward via Main Admin Provider Client
+      const provider = db.getProvider(service.providerId);
+      if (provider && provider.status === 'active') {
+        try {
+          const providerClient = new SMMProviderClient(provider.apiUrl, provider.apiKey);
+          const providerRes = await providerClient.placeOrder(
+            service.providerServiceId,
+            link,
+            quantity
+          );
+          if (providerRes.error) {
+            return res.status(400).json({
+              error: `Provider API Error: ${providerRes.error}. Your order was not placed and balance remains unchanged.`,
+            });
+          }
+          if (providerRes.orderId) {
+            providerOrderId = providerRes.orderId;
+          }
+        } catch (prvErr: any) {
+          return res.status(500).json({
+            error: `Failed to connect to provider API: ${prvErr.message || prvErr}. Balance refunded.`,
+          });
+        }
       }
     }
 
     // Deduct user balance only after provider check or order confirmation
     db.deductUserBalance(userId, totalSellingPrice);
+
+    // If Child Panel order, credit child owner wallet with their profit
+    if (childPanel && childOwnerProfit > 0) {
+      db.updateChildPanelWallet(childPanel.id, childOwnerProfit, 'add');
+    }
 
     const orderId = 'ORD-' + Math.floor(10000 + Math.random() * 90000);
     const newOrder: Order = {
@@ -173,6 +275,9 @@ app.post('/api/orders', async (req, res) => {
       startCount: Math.floor(Math.random() * 500) + 10,
       remains: quantity,
       status: 'Pending',
+      childPanelId: childPanel ? childPanel.id : undefined,
+      childOwnerProfit: childPanel ? childOwnerProfit : undefined,
+      mainAdminProfit: childPanel ? mainAdminProfit : undefined,
       createdAt: new Date().toISOString(),
     };
 
@@ -183,6 +288,8 @@ app.post('/api/orders', async (req, res) => {
       message: 'Order placed successfully!',
       order: newOrder,
       newBalance: db.getUser(userId)?.balance,
+      childPanelId: childPanel?.id,
+      childOwnerProfit: childPanel ? childOwnerProfit : 0,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to place order' });
@@ -222,7 +329,7 @@ app.post('/api/user/add-funds', (req, res) => {
 // QR UPI Deposit Request with WhatsApp Redirect Integration
 app.post('/api/user/deposit-request', async (req, res) => {
   try {
-    const { userId = 'usr-demo', amount, utr } = req.body;
+    const { userId = 'usr-demo', amount, utr, childPanelId } = req.body;
     const settings = db.getSettings();
 
     const numAmount = Number(amount);
@@ -236,6 +343,8 @@ app.post('/api/user/deposit-request', async (req, res) => {
 
     const user = db.getUser(userId);
     const username = user ? user.username : 'demouser';
+    const effectiveChildPanelId = childPanelId || user?.childPanelId;
+    const childPanel = effectiveChildPanelId ? db.getChildPanel(effectiveChildPanelId) : undefined;
 
     // Check if auto verify with merchant is enabled
     let isAutoVerified = false;
@@ -252,21 +361,26 @@ app.post('/api/user/deposit-request', async (req, res) => {
       paymentMethod: 'QR_UPI',
     });
 
+    if (childPanel) {
+      deposit.childPanelId = childPanel.id;
+    }
+
     if (isAutoVerified) {
       db.approveDepositRequest(deposit.id);
     }
 
-    // Format WhatsApp Message for Admin
-    const cleanWaNum = settings.whatsappNumber.replace(/\D/g, '') || '9516862495';
+    // Format WhatsApp Message for Admin or Child Owner
+    const panelName = childPanel?.branding?.panelName || settings.siteName || 'SMM SHIVAM';
+    const cleanWaNum = (childPanel?.contact?.supportWhatsapp || childPanel?.contact?.whatsappNumber || settings.whatsappNumber).replace(/\D/g, '') || '9516862495';
     const waText =
-      `*SMM SHIVAM PANEL - PAYMENT TOPUP REQUEST*\n` +
+      `*${panelName.toUpperCase()} - PAYMENT TOPUP REQUEST*\n` +
       `----------------------------------------\n` +
       `👤 *User:* ${username} (ID: ${userId})\n` +
       `💰 *Amount:* ₹${numAmount.toLocaleString('en-IN')}\n` +
       `📌 *UTR / Ref No:* \`${String(utr).trim()}\` \n` +
       `🕒 *Time:* ${new Date().toLocaleString()}\n` +
       `----------------------------------------\n` +
-      `Please verify payment and credit funds to my SMM SHIVAM account balance. Thanks!`;
+      `Please verify payment and credit funds to my ${panelName} account balance. Thanks!`;
 
     const encodedText = encodeURIComponent(waText);
     const whatsappUrl = `https://wa.me/91${cleanWaNum}?text=${encodedText}`;
@@ -310,6 +424,217 @@ app.post('/api/admin/settings', async (req, res) => {
   } catch (err: any) {
     console.error('API Admin Settings Error:', err);
     res.status(500).json({ error: err.message || 'Failed to update settings in Firebase RTDB' });
+  }
+});
+
+// Audio Upload Storage Directory
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+try {
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('Could not create uploads directory:', e);
+}
+
+// 1. Audio Streaming Endpoint (Streams uploaded MP3/WAV/WebM directly with range headers)
+app.get('/api/welcome-audio', (req, res) => {
+  const possibleFiles = ['welcome_voice.mp3', 'welcome_voice.wav', 'welcome_voice.webm', 'welcome_voice.ogg', 'welcome_voice.m4a'];
+  let audioFilePath = '';
+
+  for (const file of possibleFiles) {
+    const fullPath = path.join(UPLOADS_DIR, file);
+    if (fs.existsSync(fullPath)) {
+      audioFilePath = fullPath;
+      break;
+    }
+  }
+
+  if (!audioFilePath || !fs.existsSync(audioFilePath)) {
+    // If no uploaded audio on disk, check if settings has external URL
+    const s = db.getSettings();
+    if (s.welcomeVoiceUrl && s.welcomeVoiceUrl.startsWith('http')) {
+      return res.redirect(s.welcomeVoiceUrl);
+    }
+    // Fallback to high quality royalty-free music stream URL so audio decoder never fails
+    return res.redirect('https://assets.mixkit.co/music/preview/mixkit-cyber-city-108.mp3');
+  }
+
+  const stat = fs.statSync(audioFilePath);
+  const fileSize = stat.size;
+  const range = req.headers.range;
+  const ext = path.extname(audioFilePath).toLowerCase();
+  const contentType =
+    ext === '.mp3'
+      ? 'audio/mpeg'
+      : ext === '.wav'
+      ? 'audio/wav'
+      : ext === '.webm'
+      ? 'audio/webm'
+      : ext === '.ogg'
+      ? 'audio/ogg'
+      : ext === '.m4a'
+      ? 'audio/mp4'
+      : 'audio/mpeg';
+
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const chunksize = end - start + 1;
+    const file = fs.createReadStream(audioFilePath, { start, end });
+    const head = {
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunksize,
+      'Content-Type': contentType,
+      'Cache-Control': 'public, max-age=3600',
+    };
+    res.writeHead(206, head);
+    file.pipe(res);
+  } else {
+    const head = {
+      'Content-Length': fileSize,
+      'Content-Type': contentType,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public, max-age=3600',
+    };
+    res.writeHead(200, head);
+    fs.createReadStream(audioFilePath).pipe(res);
+  }
+});
+
+// 2. Welcome Voice Public Info API
+app.get('/api/welcome-voice', (req, res) => {
+  const s = db.getSettings();
+  res.json({
+    enabled: s.welcomeVoiceEnabled !== false,
+    audioUrl: s.welcomeVoiceUrl || '',
+    name: s.welcomeVoiceName || '',
+    text: s.welcomeVoiceText || 'WELCOME TO SMM SHIVAM OFFICIAL',
+    volume: s.welcomeVoiceVolume !== undefined ? s.welcomeVoiceVolume : 0.9,
+    playOnReload: s.welcomeVoicePlayOnReload !== false,
+    mode: s.welcomeVoiceMode || 'custom_audio',
+  });
+});
+
+// Helper: Save Base64 Audio data directly to uploads/welcome_voice.mp3
+function saveBase64AudioFile(base64Data: string, originalName?: string): string {
+  try {
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    }
+    const match = base64Data.match(/^data:audio\/([a-zA-Z0-9]+);base64,(.+)$/);
+    let buffer: Buffer;
+    let ext = 'mp3';
+
+    if (match) {
+      ext = match[1] === 'mpeg' ? 'mp3' : match[1];
+      buffer = Buffer.from(match[2], 'base64');
+    } else {
+      // Raw base64 string
+      buffer = Buffer.from(base64Data, 'base64');
+    }
+
+    const fileName = `welcome_voice.${ext}`;
+    const targetPath = path.join(UPLOADS_DIR, fileName);
+    fs.writeFileSync(targetPath, buffer);
+    return `/api/welcome-audio?t=${Date.now()}`;
+  } catch (err) {
+    console.error('Error saving audio file to disk:', err);
+    return base64Data; // fallback
+  }
+}
+
+// 3. Direct Audio File Upload Handler
+app.post('/api/admin/welcome-voice/upload', async (req, res) => {
+  try {
+    const { audioData, base64Audio, fileName, name } = req.body;
+    const rawAudio = audioData || base64Audio;
+
+    if (!rawAudio) {
+      return res.status(400).json({ error: 'Audio data is required' });
+    }
+
+    const audioUrl = saveBase64AudioFile(rawAudio, fileName || name);
+    const audioName = fileName || name || 'Uploaded Audio Song.mp3';
+
+    const updated = await db.updateSettings({
+      welcomeVoiceEnabled: true,
+      welcomeVoiceUrl: audioUrl,
+      welcomeVoiceName: audioName,
+      welcomeVoiceMode: 'custom_audio',
+    });
+
+    res.json({
+      success: true,
+      message: 'Audio song uploaded and saved successfully! Ready to play.',
+      audioUrl,
+      name: audioName,
+      settings: updated,
+    });
+  } catch (err: any) {
+    console.error('Audio upload error:', err);
+    res.status(500).json({ error: err.message || 'Failed to process audio upload' });
+  }
+});
+
+// 4. Admin Welcome Voice Settings Save Handler
+app.post('/api/admin/welcome-voice', async (req, res) => {
+  try {
+    const enabled = req.body.welcomeVoiceEnabled !== undefined ? req.body.welcomeVoiceEnabled : req.body.enabled;
+    let audioUrl = req.body.welcomeVoiceUrl !== undefined ? req.body.welcomeVoiceUrl : req.body.audioUrl;
+    const name = req.body.welcomeVoiceName !== undefined ? req.body.welcomeVoiceName : req.body.name;
+    const text = req.body.welcomeVoiceText !== undefined ? req.body.welcomeVoiceText : req.body.text;
+    const volume = req.body.welcomeVoiceVolume !== undefined ? req.body.welcomeVoiceVolume : req.body.volume;
+    const playOnReload = req.body.welcomeVoicePlayOnReload !== undefined ? req.body.welcomeVoicePlayOnReload : req.body.playOnReload;
+    const mode = req.body.welcomeVoiceMode !== undefined ? req.body.welcomeVoiceMode : req.body.mode;
+
+    const payload: any = {};
+    if (enabled !== undefined) payload.welcomeVoiceEnabled = Boolean(enabled);
+
+    // If audioUrl is a large Base64 string, write it to disk and convert to fast streaming url
+    if (audioUrl !== undefined) {
+      if (typeof audioUrl === 'string' && audioUrl.startsWith('data:audio/')) {
+        audioUrl = saveBase64AudioFile(audioUrl, name);
+      }
+      payload.welcomeVoiceUrl = String(audioUrl);
+    }
+
+    if (name !== undefined) payload.welcomeVoiceName = String(name);
+    if (text !== undefined) payload.welcomeVoiceText = String(text);
+    if (volume !== undefined) payload.welcomeVoiceVolume = Number(volume);
+    if (playOnReload !== undefined) payload.welcomeVoicePlayOnReload = Boolean(playOnReload);
+    if (mode !== undefined) payload.welcomeVoiceMode = mode;
+
+    const updated = await db.updateSettings(payload);
+    res.json({
+      success: true,
+      message: 'Welcome Voice updated successfully! All users will now hear this greeting on load.',
+      settings: updated,
+    });
+  } catch (err: any) {
+    console.error('Welcome Voice update error:', err);
+    res.status(500).json({ error: err.message || 'Failed to save Welcome Voice' });
+  }
+});
+
+app.delete('/api/admin/welcome-voice', async (req, res) => {
+  try {
+    const updated = await db.updateSettings({
+      welcomeVoiceEnabled: false,
+      welcomeVoiceUrl: '',
+      welcomeVoiceName: '',
+      welcomeVoiceText: '',
+      welcomeVoiceMode: 'none',
+    });
+    res.json({
+      success: true,
+      message: 'Welcome Voice removed and disabled.',
+      settings: updated,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to remove Welcome Voice' });
   }
 });
 
@@ -422,9 +747,81 @@ app.post('/api/v2', async (req, res) => {
   return res.json({ error: 'Invalid action parameter' });
 });
 
-// Tickets API
+// Support Tickets API
 app.get('/api/tickets', (req, res) => {
-  res.json({ tickets: db.getAdminStats() });
+  const { userId } = req.query;
+  if (userId) {
+    const userTickets = db.getUserTickets(String(userId));
+    return res.json({ tickets: userTickets });
+  }
+  const allTickets = db.getTickets();
+  res.json({ tickets: allTickets });
+});
+
+app.get('/api/admin/tickets', (req, res) => {
+  const tickets = db.getTickets();
+  res.json({ tickets });
+});
+
+app.post('/api/tickets', (req, res) => {
+  const { userId, username, userEmail, whatsappNo, subject, orderId, message } = req.body;
+
+  if (!userId || !message) {
+    return res.status(400).json({ error: 'User ID and message are required' });
+  }
+
+  const newTicket = db.createTicket({
+    userId,
+    username,
+    userEmail,
+    whatsappNo,
+    subject,
+    orderId,
+    message,
+  });
+
+  res.json({ success: true, message: 'Ticket created successfully!', ticket: newTicket });
+});
+
+app.post('/api/tickets/:id/reply', (req, res) => {
+  const { id } = req.params;
+  const { sender = 'user', text } = req.body;
+
+  if (!text || !text.trim()) {
+    return res.status(400).json({ error: 'Reply text cannot be empty' });
+  }
+
+  const result = db.replyTicket(id, sender, text);
+  if (result.error) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  res.json({ success: true, message: 'Reply sent successfully!', ticket: result.ticket });
+});
+
+app.post('/api/admin/tickets/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (!['Open', 'In Progress', 'Answered', 'Closed'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid ticket status' });
+  }
+
+  const updated = db.updateTicketStatus(id, status);
+  if (!updated) {
+    return res.status(404).json({ error: 'Ticket not found' });
+  }
+
+  res.json({ success: true, message: `Ticket status updated to ${status}`, ticket: updated });
+});
+
+app.delete('/api/admin/tickets/:id', (req, res) => {
+  const { id } = req.params;
+  const deleted = db.deleteTicket(id);
+  if (!deleted) {
+    return res.status(404).json({ error: 'Ticket not found' });
+  }
+  res.json({ success: true, message: 'Ticket deleted successfully!' });
 });
 
 // ADMIN ROUTES
@@ -544,6 +941,32 @@ app.post('/api/admin/providers/:id/sync', async (req, res) => {
   }
 });
 
+// Categories Management Routes
+app.get('/api/admin/categories', (req, res) => {
+  const categories = db.getCategories();
+  res.json({ categories });
+});
+
+app.post('/api/admin/categories', (req, res) => {
+  try {
+    const { name, icon } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Category name is required' });
+    }
+    const cat = db.findOrCreateCategory(name.trim(), icon);
+    res.json({ success: true, message: `Category "${cat.name}" added successfully!`, category: cat });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to add category' });
+  }
+});
+
+app.delete('/api/admin/categories/:id', (req, res) => {
+  const { id } = req.params;
+  const deleted = db.deleteCategory(id);
+  if (!deleted) return res.status(404).json({ error: 'Category not found' });
+  res.json({ success: true, message: 'Category deleted successfully!' });
+});
+
 // Admin Get Services (Includes inactive)
 app.get('/api/admin/services', (req, res) => {
   const services = db.getServices(false);
@@ -627,16 +1050,16 @@ app.post('/api/admin/reset-data', (req, res) => {
   }
 });
 
-// Admin Bulk Profit Margin % Update for ALL Services
+// Admin Bulk Profit Margin % Update for ALL Services or Specific Category
 app.post('/api/admin/services/bulk-margin', (req, res) => {
-  const { marginPercentage } = req.body;
+  const { marginPercentage, category } = req.body;
   const numericMargin = Number(marginPercentage);
 
   if (isNaN(numericMargin) || numericMargin < 0) {
     return res.status(400).json({ error: 'Valid non-negative margin percentage is required' });
   }
 
-  const result = db.updateBulkProfitMargin(numericMargin);
+  const result = db.updateBulkProfitMargin(numericMargin, category);
   res.json({ success: true, ...result });
 });
 
@@ -665,6 +1088,34 @@ app.post('/api/user/sync', (req, res) => {
   }
   const saved = db.saveUser(userProfile);
   res.json({ success: true, user: saved });
+});
+
+// Check Username & Email Availability endpoint
+app.get('/api/auth/check-username', (req, res) => {
+  const queryUsername = String(req.query.username || '').trim().toLowerCase();
+  const queryEmail = String(req.query.email || '').trim().toLowerCase();
+  const users = db.getUsers();
+
+  let usernameTaken = false;
+  let emailTaken = false;
+
+  if (queryUsername) {
+    usernameTaken = users.some((u) => u.username && u.username.trim().toLowerCase() === queryUsername);
+  }
+  if (queryEmail) {
+    emailTaken = users.some((u) => u.email && u.email.trim().toLowerCase() === queryEmail);
+  }
+
+  res.json({
+    usernameTaken,
+    emailTaken,
+    available: !usernameTaken && !emailTaken,
+    message: usernameTaken
+      ? 'This username is already registered. Please choose a different username.'
+      : emailTaken
+      ? 'An account with this email address already exists. Please log in.'
+      : 'Available',
+  });
 });
 
 // REFERRAL & WITHDRAWAL API ROUTES
@@ -776,6 +1227,21 @@ app.post('/api/admin/users/:id/status', (req, res) => {
   res.json({ success: true, user: updatedUser });
 });
 
+// Admin Reset / Update User Password
+app.post('/api/admin/users/:id/password', (req, res) => {
+  const { id } = req.params;
+  const { password } = req.body;
+
+  if (!password || !password.trim()) {
+    return res.status(400).json({ error: 'Password cannot be empty' });
+  }
+
+  const updatedUser = db.updateUserPassword(id, password.trim());
+  if (!updatedUser) return res.status(404).json({ error: 'User not found' });
+
+  res.json({ success: true, message: 'Password updated successfully!', user: updatedUser });
+});
+
 // Admin Delete User
 app.delete('/api/admin/users/:id', (req, res) => {
   const { id } = req.params;
@@ -804,6 +1270,510 @@ app.post('/api/admin/users/clear-all', (req, res) => {
 app.get('/api/admin/logs', (req, res) => {
   const logs = db.getSyncLogs();
   res.json({ logs });
+});
+
+// ============================================================================
+// CHILD PANEL WHITE-LABEL & OWNER PORTAL API ROUTES
+// ============================================================================
+
+// 1. Test Custom API Connection
+app.post('/api/panel/test-api', async (req, res) => {
+  try {
+    const { apiUrl, apiKey } = req.body;
+    if (!apiUrl || !apiKey) {
+      return res.status(400).json({ error: 'API URL and API Key are required' });
+    }
+    const client = new SMMProviderClient(apiUrl, apiKey);
+    const result = await client.testConnection();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Connection test failed' });
+  }
+});
+
+// 1.5 Main Admin: Get and Update Global Child Panel Margin Rules
+app.get('/api/admin/child-panels/margin-rules', (req, res) => {
+  const settings = db.getSettings();
+  res.json({
+    childPanelAdminMarginPercentage: settings.childPanelAdminMarginPercentage ?? 15,
+    childPanelDefaultOwnerMarginPercentage: settings.childPanelDefaultOwnerMarginPercentage ?? 25,
+    childPanelMinMarginPercentage: settings.childPanelMinMarginPercentage ?? 5,
+    childPanelMaxMarginPercentage: settings.childPanelMaxMarginPercentage ?? 300,
+    childPanelPriceINR: settings.childPanelPriceINR ?? 499,
+  });
+});
+
+app.post('/api/admin/child-panels/margin-rules', (req, res) => {
+  try {
+    const {
+      adminMarginPercentage,
+      defaultOwnerMarginPercentage,
+      minMarginPercentage,
+      maxMarginPercentage,
+      childPanelPriceINR,
+      applyToAllExistingPanels,
+    } = req.body;
+
+    if (adminMarginPercentage === undefined || isNaN(Number(adminMarginPercentage))) {
+      return res.status(400).json({ error: 'Valid Admin margin percentage is required' });
+    }
+
+    const result = db.updateChildPanelAdminMarginRules({
+      adminMarginPercentage: Number(adminMarginPercentage),
+      defaultOwnerMarginPercentage: defaultOwnerMarginPercentage !== undefined ? Number(defaultOwnerMarginPercentage) : undefined,
+      minMarginPercentage: minMarginPercentage !== undefined ? Number(minMarginPercentage) : undefined,
+      maxMarginPercentage: maxMarginPercentage !== undefined ? Number(maxMarginPercentage) : undefined,
+      childPanelPriceINR: childPanelPriceINR !== undefined ? Number(childPanelPriceINR) : undefined,
+      applyToAllExistingPanels: Boolean(applyToAllExistingPanels),
+    });
+
+    res.json({
+      success: true,
+      message: `Admin Child Panel margin set to ${adminMarginPercentage}% successfully!${result.updatedCount > 0 ? ` Updated ${result.updatedCount} child panels.` : ''}`,
+      settings: result.settings,
+      updatedCount: result.updatedCount,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update child panel margin rules' });
+  }
+});
+
+// 2. Main Admin: Get All Child Panels
+app.get('/api/admin/child-panels', (req, res) => {
+  try {
+    const childPanels = db.getChildPanels();
+    const enriched = childPanels.map((p) => {
+      const orders = db.getChildPanelOrders(p.id);
+      const users = db.getChildPanelUsers(p.id);
+      const totalRevenue = orders.reduce((sum, o) => sum + (o.sellingPrice || 0), 0);
+      const totalProfit = orders.reduce((sum, o) => sum + (o.profit || 0), 0);
+      const totalChildProfit = orders.reduce((sum, o) => sum + (o.childOwnerProfit || 0), 0);
+      const totalMainAdminProfit = orders.reduce((sum, o) => sum + (o.mainAdminProfit || 0), 0);
+
+      return {
+        ...p,
+        totalOrdersCount: orders.length,
+        totalUsersCount: users.length,
+        totalRevenueINR: Number(totalRevenue.toFixed(2)),
+        totalProfitINR: Number(totalProfit.toFixed(2)),
+        totalChildProfitINR: Number(totalChildProfit.toFixed(2)),
+        totalMainAdminProfitINR: Number(totalMainAdminProfit.toFixed(2)),
+      };
+    });
+    res.json({ childPanels: enriched });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch child panels' });
+  }
+});
+
+// 3. Main Admin: Get Single Child Panel Details
+app.get('/api/admin/child-panels/:id', (req, res) => {
+  const { id } = req.params;
+  const childPanel = db.getChildPanel(id);
+  if (!childPanel) return res.status(404).json({ error: 'Child panel not found' });
+
+  const orders = db.getChildPanelOrders(childPanel.id);
+  const users = db.getChildPanelUsers(childPanel.id);
+  const deposits = db.getChildPanelDeposits(childPanel.id);
+  const tickets = db.getChildPanelTickets(childPanel.id);
+  const stats = db.getChildPanelStats(childPanel.id);
+
+  res.json({
+    childPanel,
+    orders,
+    users,
+    deposits,
+    tickets,
+    stats,
+  });
+});
+
+// 4. Main Admin: Create Child Panel
+app.post('/api/admin/child-panels', (req, res) => {
+  try {
+    const result = db.createChildPanel(req.body);
+    if (result.error) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.json({
+      success: true,
+      message: `Child panel "${result.childPanel?.name}" created successfully!`,
+      childPanel: result.childPanel,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to create child panel' });
+  }
+});
+
+// 5. Main Admin: Update Child Panel
+app.put('/api/admin/child-panels/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = db.updateChildPanel(id, req.body);
+    if (result.error) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.json({
+      success: true,
+      message: 'Child panel updated successfully!',
+      childPanel: result.childPanel,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update child panel' });
+  }
+});
+
+// 6. Main Admin: Delete Child Panel
+app.delete('/api/admin/child-panels/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = db.deleteChildPanel(id);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error || 'Failed to delete child panel' });
+    }
+    res.json({ success: true, message: 'Child panel deleted successfully!' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete child panel' });
+  }
+});
+
+// 7. Main Admin: Toggle Child Panel Status (Active / Disabled)
+app.post('/api/admin/child-panels/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  if (status !== 'active' && status !== 'disabled') {
+    return res.status(400).json({ error: 'Status must be active or disabled' });
+  }
+  const result = db.updateChildPanelStatus(id, status);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({
+    success: true,
+    message: `Child panel is now ${status}!`,
+    childPanel: result.childPanel,
+  });
+});
+
+// 8. Main Admin: Add or Reduce Wallet Balance for Child Panel
+app.post('/api/admin/child-panels/:id/wallet', (req, res) => {
+  const { id } = req.params;
+  const { amount, action } = req.body;
+  if (!amount || !action) {
+    return res.status(400).json({ error: 'Amount and action (add/reduce) are required' });
+  }
+  const result = db.updateChildPanelWallet(id, Number(amount), action);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({
+    success: true,
+    message: `Wallet ${action === 'add' ? 'credited' : 'debited'} successfully!`,
+    childPanel: result.childPanel,
+  });
+});
+
+// 9. Main Admin: Get Isolated Child Panel Orders, Users, Deposits, Stats
+app.get('/api/admin/child-panels/:id/orders', (req, res) => {
+  const { id } = req.params;
+  res.json({ orders: db.getChildPanelOrders(id) });
+});
+
+app.get('/api/admin/child-panels/:id/users', (req, res) => {
+  const { id } = req.params;
+  res.json({ users: db.getChildPanelUsers(id) });
+});
+
+app.get('/api/admin/child-panels/:id/deposits', (req, res) => {
+  const { id } = req.params;
+  res.json({ deposits: db.getChildPanelDeposits(id) });
+});
+
+app.get('/api/admin/child-panels/:id/stats', (req, res) => {
+  const { id } = req.params;
+  const { timeframe = 'all' } = req.query;
+  res.json({ stats: db.getChildPanelStats(id, String(timeframe)) });
+});
+
+// --- CHILD PANEL OWNER PORTAL ROUTES ---
+
+// Child Owner: Get My Panel & Profile
+app.get('/api/child-owner/me', (req, res) => {
+  const { ownerId, childPanelId } = req.query;
+  const query = String(childPanelId || ownerId || '');
+  const childPanel = db.getChildPanel(query);
+  if (!childPanel) return res.status(404).json({ error: 'Child panel not found for this user' });
+
+  const owner = db.getUser(childPanel.ownerId) || db.getUser(childPanel.ownerEmail);
+  const stats = db.getChildPanelStats(childPanel.id);
+
+  res.json({
+    childPanel,
+    owner,
+    stats,
+  });
+});
+
+// Child Owner: Update Branding
+app.put('/api/child-owner/branding', (req, res) => {
+  const { childPanelId, branding } = req.body;
+  if (!childPanelId) return res.status(400).json({ error: 'Child panel ID is required' });
+  const result = db.updateChildPanelBranding(childPanelId, branding);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({
+    success: true,
+    message: 'Child panel branding updated successfully! Main Admin branding remains completely intact.',
+    childPanel: result.childPanel,
+  });
+});
+
+// Child Owner: Update Pricing
+app.put('/api/child-owner/pricing', (req, res) => {
+  const { childPanelId, pricing } = req.body;
+  if (!childPanelId) return res.status(400).json({ error: 'Child panel ID is required' });
+  const result = db.updateChildPanelPricing(childPanelId, pricing);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({
+    success: true,
+    message: 'Pricing settings and margins updated successfully!',
+    childPanel: result.childPanel,
+  });
+});
+
+// Child Owner: Update Payment Methods (UPI / QR)
+app.put('/api/child-owner/payment', (req, res) => {
+  const { childPanelId, payment } = req.body;
+  if (!childPanelId) return res.status(400).json({ error: 'Child panel ID is required' });
+  const result = db.updateChildPanelPayment(childPanelId, payment);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({
+    success: true,
+    message: 'Payment methods updated successfully!',
+    childPanel: result.childPanel,
+  });
+});
+
+// Child Owner: Update Contact & Support
+app.put('/api/child-owner/contact', (req, res) => {
+  const { childPanelId, contact } = req.body;
+  if (!childPanelId) return res.status(400).json({ error: 'Child panel ID is required' });
+  const result = db.updateChildPanelContact(childPanelId, contact);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({
+    success: true,
+    message: 'Contact & support information updated successfully!',
+    childPanel: result.childPanel,
+  });
+});
+
+// Child Owner: Update API Settings (Option A / Option B)
+app.put('/api/child-owner/api', (req, res) => {
+  const { childPanelId, apiSettings } = req.body;
+  if (!childPanelId) return res.status(400).json({ error: 'Child panel ID is required' });
+  const result = db.updateChildPanelApi(childPanelId, apiSettings);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({
+    success: true,
+    message: 'API configuration updated successfully!',
+    childPanel: result.childPanel,
+  });
+});
+
+// Child Owner: Isolated Orders List
+app.get('/api/child-owner/orders', (req, res) => {
+  const { childPanelId } = req.query;
+  if (!childPanelId) return res.status(400).json({ error: 'Child panel ID is required' });
+  const orders = db.getChildPanelOrders(String(childPanelId));
+  res.json({ orders });
+});
+
+// Child Owner: Isolated Users List
+app.get('/api/child-owner/users', (req, res) => {
+  const { childPanelId } = req.query;
+  if (!childPanelId) return res.status(400).json({ error: 'Child panel ID is required' });
+  const users = db.getChildPanelUsers(String(childPanelId));
+  res.json({ users });
+});
+
+// Child Owner: Isolated Deposits List & Actions
+app.get('/api/child-owner/deposits', (req, res) => {
+  const { childPanelId } = req.query;
+  if (!childPanelId) return res.status(400).json({ error: 'Child panel ID is required' });
+  const deposits = db.getChildPanelDeposits(String(childPanelId));
+  res.json({ deposits });
+});
+
+// Child Owner: Approve Deposit
+app.post('/api/child-owner/deposits/:id/approve', (req, res) => {
+  const { id } = req.params;
+  const { childPanelId } = req.body;
+  const deposit = db.getDepositRequests().find((d) => d.id === id);
+  if (!deposit) return res.status(404).json({ error: 'Deposit request not found' });
+
+  if (childPanelId && deposit.childPanelId && deposit.childPanelId !== childPanelId) {
+    return res.status(403).json({ error: 'Unauthorized to approve deposits of another panel' });
+  }
+
+  const updated = db.approveDepositRequest(id);
+  if (updated.error || !updated.deposit) return res.status(400).json({ error: updated.error || 'Could not approve deposit request' });
+
+  res.json({
+    success: true,
+    message: `₹${updated.deposit.amount} approved and credited to ${updated.deposit.username}!`,
+    deposit: updated.deposit,
+  });
+});
+
+// Child Owner: Reject Deposit
+app.post('/api/child-owner/deposits/:id/reject', (req, res) => {
+  const { id } = req.params;
+  const { childPanelId } = req.body;
+  const deposit = db.getDepositRequests().find((d) => d.id === id);
+  if (!deposit) return res.status(404).json({ error: 'Deposit request not found' });
+
+  if (childPanelId && deposit.childPanelId && deposit.childPanelId !== childPanelId) {
+    return res.status(403).json({ error: 'Unauthorized to reject deposits of another panel' });
+  }
+
+  const updated = db.rejectDepositRequest(id);
+  if (!updated) return res.status(400).json({ error: 'Could not reject deposit request' });
+
+  res.json({
+    success: true,
+    message: 'Deposit request rejected.',
+    deposit: updated,
+  });
+});
+
+// Child Owner: Isolated Tickets List
+app.get('/api/child-owner/tickets', (req, res) => {
+  const { childPanelId } = req.query;
+  if (!childPanelId) return res.status(400).json({ error: 'Child panel ID is required' });
+  const tickets = db.getChildPanelTickets(String(childPanelId));
+  res.json({ tickets });
+});
+
+// Child Owner: Stats Analytics
+app.get('/api/child-owner/stats', (req, res) => {
+  const { childPanelId, timeframe = 'all' } = req.query;
+  if (!childPanelId) return res.status(400).json({ error: 'Child panel ID is required' });
+  const stats = db.getChildPanelStats(String(childPanelId), String(timeframe));
+  res.json({ stats });
+});
+
+// --- CHILD PANEL PURCHASE REQUESTS API ---
+
+// List Purchase Requests (Filtered by user, or all for Admin)
+app.get('/api/child-panel-requests', (req, res) => {
+  const { userId } = req.query;
+  const requests = db.getChildPanelRequests(userId ? String(userId) : undefined);
+  res.json({ requests });
+});
+
+// User: Submit Buy Child Panel Request
+app.post('/api/child-panel-requests', (req, res) => {
+  const {
+    userId,
+    username,
+    userEmail,
+    whatsappNo,
+    requestedPanelName,
+    requestedSlug,
+    requestedDomain,
+    amount,
+    utr,
+  } = req.body;
+
+  if (!requestedPanelName || !requestedPanelName.trim()) {
+    return res.status(400).json({ error: 'Desired Panel Name is required.' });
+  }
+  if (!requestedSlug || !requestedSlug.trim()) {
+    return res.status(400).json({ error: 'Desired Panel Slug (for /panel/slug) is required.' });
+  }
+  if (!utr || !utr.trim()) {
+    return res.status(400).json({ error: 'Payment UTR / Transaction Reference Number is required.' });
+  }
+
+  const result = db.createChildPanelRequest({
+    userId,
+    username,
+    userEmail,
+    whatsappNo,
+    requestedPanelName,
+    requestedSlug,
+    requestedDomain,
+    amount: Number(amount) || undefined,
+    utr,
+  });
+
+  if (result.error) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  const settings = db.getSettings();
+  const cleanWaNum = (settings.whatsappNumber || '9516862495').replace(/\D/g, '');
+  const panelName = settings.siteName || 'SMM SHIVAM';
+
+  const waText =
+    `*⚡ ${panelName.toUpperCase()} - BUY CHILD PANEL REQUEST ⚡*\n` +
+    `----------------------------------------\n` +
+    `👤 *Username:* ${result.request?.username || username || 'User'}\n` +
+    `📧 *Email:* ${result.request?.userEmail || userEmail}\n` +
+    `📱 *WhatsApp:* +${result.request?.whatsappNo || whatsappNo}\n` +
+    `🔑 *Reg Password:* ${result.request?.password || (db.getUser(userId)?.password || 'Saved in Admin')}\n` +
+    `🏷️ *Panel Name:* ${result.request?.requestedPanelName}\n` +
+    `🌐 *Slug / URL:* /panel/${result.request?.requestedSlug}\n` +
+    (result.request?.requestedDomain ? `🌐 *Custom Domain:* ${result.request.requestedDomain}\n` : '') +
+    `💰 *Amount Paid:* ₹${result.request?.amount || 499}\n` +
+    `📌 *UTR / Ref No:* \`${result.request?.utr}\`\n` +
+    `🕒 *Date/Time:* ${new Date().toLocaleString()}\n` +
+    `----------------------------------------\n` +
+    `Hello Admin, I have submitted payment for my Child Panel. Please verify my payment and approve my Child Panel. Thanks!`;
+
+  const encodedText = encodeURIComponent(waText);
+  const whatsappUrl = `https://wa.me/91${cleanWaNum}?text=${encodedText}`;
+
+  res.json({
+    success: true,
+    message: 'Child panel purchase request submitted successfully! Opening WhatsApp chat for instant approval...',
+    request: result.request,
+    whatsappUrl,
+    whatsappNumber: cleanWaNum,
+    formattedText: waText,
+  });
+});
+
+// Main Admin: Approve Child Panel Request
+// Converts SAME existing user into CHILD_OWNER, creates unique childPanelId and panel, keeps all user data
+app.post('/api/admin/child-panel-requests/:id/approve', (req, res) => {
+  const { id } = req.params;
+  const { adminNote } = req.body;
+
+  const result = db.approveChildPanelRequest(id, adminNote);
+  if (!result.success || result.error) {
+    return res.status(400).json({ error: result.error || 'Failed to approve request' });
+  }
+
+  res.json({
+    success: true,
+    message: `Purchase request approved! User "${result.user?.username}" has been converted to Child Owner with panel "${result.childPanel?.name}".`,
+    request: result.request,
+    childPanel: result.childPanel,
+    user: result.user,
+  });
+});
+
+// Main Admin: Reject Child Panel Request
+app.post('/api/admin/child-panel-requests/:id/reject', (req, res) => {
+  const { id } = req.params;
+  const { adminNote } = req.body;
+
+  const result = db.rejectChildPanelRequest(id, adminNote);
+  if (!result.success || result.error) {
+    return res.status(400).json({ error: result.error || 'Failed to reject request' });
+  }
+
+  res.json({
+    success: true,
+    message: 'Child panel purchase request has been rejected.',
+    request: result.request,
+  });
 });
 
 // START SERVER / VITE MIDDLEWARE

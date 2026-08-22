@@ -15,6 +15,7 @@ import {
   X,
   Layers,
   Check,
+  FolderPlus,
 } from 'lucide-react';
 import { Service, Category, Provider } from '../../types';
 
@@ -32,6 +33,9 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
 
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
 
   // New Custom Service Form State
@@ -56,8 +60,12 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
 
   // Bulk Margin State
   const [marginPct, setMarginPct] = useState<string>('20');
+  const [marginScope, setMarginScope] = useState<string>('ALL');
   const [isUpdatingMargin, setIsUpdatingMargin] = useState(false);
   const [toastMsg, setToastMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Edit Modal margin calculator state
+  const [editMarginPct, setEditMarginPct] = useState<string>('20');
 
   useEffect(() => {
     fetchServices();
@@ -108,10 +116,10 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
         body: JSON.stringify({
           ...newServiceForm,
           category: finalCategory,
-          providerRate: Number(newServiceForm.providerRate),
-          sellingRate: Number(newServiceForm.sellingRate),
-          min: Number(newServiceForm.min),
-          max: Number(newServiceForm.max),
+          providerRate: Number(newServiceForm.providerRate) || 0,
+          sellingRate: Number(newServiceForm.sellingRate) || 0,
+          min: Number(newServiceForm.min) || 10,
+          max: Number(newServiceForm.max) || 100000,
         }),
       });
 
@@ -151,7 +159,13 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
       const res = await fetch(`/api/admin/services/${editingService.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({
+          ...editForm,
+          providerRate: Number(editForm.providerRate) || 0,
+          sellingRate: Number(editForm.sellingRate) || 0,
+          min: Number(editForm.min) || 10,
+          max: Number(editForm.max) || 100000,
+        }),
       });
 
       const data = await res.json();
@@ -168,10 +182,6 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
   };
 
   const handleDeleteService = async (service: Service) => {
-    if (!window.confirm(`Are you sure you want to delete "${service.serviceName}" (#${service.providerServiceId})?`)) {
-      return;
-    }
-
     try {
       const res = await fetch(`/api/admin/services/${service.id}`, {
         method: 'DELETE',
@@ -188,15 +198,11 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
     }
   };
 
-  const handleApplyBulkMargin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleApplyBulkMargin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const pct = Number(marginPct);
     if (isNaN(pct) || pct < 0) {
       showToast('error', 'Please enter a valid non-negative profit margin percentage');
-      return;
-    }
-
-    if (!window.confirm(`Are you sure you want to apply ${pct}% Profit Margin to ALL ${services.length} services?`)) {
       return;
     }
 
@@ -205,12 +211,15 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
       const res = await fetch('/api/admin/services/bulk-margin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ marginPercentage: pct }),
+        body: JSON.stringify({
+          marginPercentage: pct,
+          category: marginScope === 'ALL' ? undefined : marginScope,
+        }),
       });
 
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast('success', `Successfully applied ${pct}% profit margin to ALL ${data.updatedCount} services!`);
+        showToast('success', `Successfully applied ${pct}% profit margin to ${data.updatedCount} services!`);
         fetchServices();
       } else {
         showToast('error', data.error || 'Failed to apply profit margin');
@@ -219,6 +228,37 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
       showToast('error', err.message || 'Error updating profit margin');
     } finally {
       setIsUpdatingMargin(false);
+    }
+  };
+
+  const handleAddCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = newCategoryInput.trim();
+    if (!cleanName) {
+      showToast('error', 'Please enter a category name');
+      return;
+    }
+
+    setIsAddingCategory(true);
+    try {
+      const res = await fetch('/api/admin/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: cleanName }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('success', `Category "${cleanName}" created successfully!`);
+        setShowAddCategoryModal(false);
+        setNewCategoryInput('');
+        fetchServices();
+      } else {
+        showToast('error', data.error || 'Failed to add category');
+      }
+    } catch (err: any) {
+      showToast('error', err.message || 'Error creating category');
+    } finally {
+      setIsAddingCategory(false);
     }
   };
 
@@ -266,7 +306,18 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => {
+              setNewCategoryInput('');
+              setShowAddCategoryModal(true);
+            }}
+            className="bg-zinc-900 border border-yellow-500/50 hover:bg-yellow-500 hover:text-black text-yellow-400 font-extrabold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-md"
+          >
+            <FolderPlus className="w-4 h-4" />
+            <span>+ Add Category</span>
+          </button>
+
           <button
             onClick={() => {
               setNewServiceForm({
@@ -326,24 +377,26 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
           <div>
             <h2 className="text-sm font-black uppercase text-yellow-400 flex items-center gap-2">
               <Percent className="w-4 h-4 text-yellow-400" />
-              <span>Bulk Set Profit Margin % for ALL Services</span>
+              <span>Bulk Set Profit Margin %</span>
             </h2>
             <p className="text-[11px] text-zinc-400 mt-0.5">
-              Automatically calculates selling price = Provider Cost + (Provider Cost × Profit Margin %).
+              Automatically sets selling price = Provider Cost + (Provider Cost × Margin %). Changes save to Firebase database instantly.
             </p>
           </div>
 
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] uppercase font-extrabold text-zinc-500 mr-1">Presets:</span>
-            {[10, 20, 30, 50, 100].map((p) => (
+            <span className="text-[10px] uppercase font-extrabold text-zinc-500 mr-1">Quick Presets:</span>
+            {[10, 20, 30, 40, 50, 100, 200].map((p) => (
               <button
                 key={p}
                 type="button"
-                onClick={() => setMarginPct(p.toString())}
+                onClick={() => {
+                  setMarginPct(p.toString());
+                }}
                 className={`px-2.5 py-1 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
                   marginPct === p.toString()
                     ? 'bg-yellow-500 text-black font-extrabold shadow-md'
-                    : 'bg-black text-zinc-400 border border-zinc-800 hover:text-yellow-400'
+                    : 'bg-black text-zinc-400 border border-zinc-800 hover:text-yellow-400 hover:border-yellow-500/40'
                 }`}
               >
                 +{p}%
@@ -352,31 +405,56 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
           </div>
         </div>
 
-        <form onSubmit={handleApplyBulkMargin} className="flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative w-full sm:w-64">
-            <span className="absolute left-3.5 top-2.5 text-yellow-400 font-bold text-xs">%</span>
-            <input
-              type="number"
-              min="0"
-              max="1000"
-              step="1"
-              value={marginPct}
-              onChange={(e) => setMarginPct(e.target.value)}
-              className="w-full bg-black border border-zinc-800 rounded-2xl pl-8 pr-4 py-2.5 text-xs font-mono font-extrabold text-yellow-400 focus:outline-none focus:border-yellow-400"
-              placeholder="e.g. 20 for 20%"
-              required
-            />
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          <div className="w-full sm:w-52">
+            <label className="block text-[10px] uppercase font-extrabold text-zinc-400 mb-1">Target Category</label>
+            <select
+              value={marginScope}
+              onChange={(e) => setMarginScope(e.target.value)}
+              className="w-full bg-black border border-zinc-800 rounded-2xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-yellow-400"
+            >
+              <option value="ALL">All Categories ({services.length} services)</option>
+              {categories.map((c) => {
+                const count = services.filter((s) => s.category === c.name).length;
+                return (
+                  <option key={c.id} value={c.name}>
+                    {c.name} ({count})
+                  </option>
+                );
+              })}
+            </select>
           </div>
 
-          <button
-            type="submit"
-            disabled={isUpdatingMargin}
-            className="w-full sm:w-auto bg-gradient-to-r from-yellow-500 to-amber-400 hover:from-yellow-400 hover:to-amber-300 text-black font-black px-6 py-2.5 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-yellow-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap active:scale-95"
-          >
-            <Sparkles className="w-4 h-4 fill-black text-black" />
-            <span>{isUpdatingMargin ? 'Applying Margin...' : `Apply ${marginPct || 0}% Profit Margin To All`}</span>
-          </button>
-        </form>
+          <div className="w-full sm:w-48">
+            <label className="block text-[10px] uppercase font-extrabold text-zinc-400 mb-1">Margin Percentage</label>
+            <div className="relative">
+              <span className="absolute left-3.5 top-2.5 text-yellow-400 font-bold text-xs">%</span>
+              <input
+                type="number"
+                min="0"
+                max="1000"
+                step="1"
+                value={marginPct}
+                onChange={(e) => setMarginPct(e.target.value)}
+                className="w-full bg-black border border-zinc-800 rounded-2xl pl-8 pr-4 py-2.5 text-xs font-mono font-extrabold text-yellow-400 focus:outline-none focus:border-yellow-400"
+                placeholder="e.g. 20"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="w-full sm:w-auto self-end pt-1 sm:pt-0">
+            <button
+              type="button"
+              onClick={() => handleApplyBulkMargin()}
+              disabled={isUpdatingMargin}
+              className="w-full sm:w-auto bg-gradient-to-r from-yellow-500 to-amber-400 hover:from-yellow-400 hover:to-amber-300 text-black font-black px-6 py-2.5 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-yellow-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap active:scale-95 disabled:opacity-50"
+            >
+              <Sparkles className="w-4 h-4 fill-black text-black" />
+              <span>{isUpdatingMargin ? 'Applying Margin...' : `Save & Apply +${marginPct || 0}% Margin`}</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Filters Bar: Search & Category */}
@@ -438,10 +516,10 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
                   </td>
                 </tr>
               ) : (
-                filtered.map((srv) => {
+                filtered.map((srv, idx) => {
                   const profitPer1k = srv.sellingRate - srv.providerRate;
                   return (
-                    <tr key={srv.id} className="hover:bg-zinc-900/60 transition-colors">
+                    <tr key={srv.id ? `${srv.id}-${idx}` : `srv-${idx}`} className="hover:bg-zinc-900/60 transition-colors">
                       <td className="py-3.5 px-4 text-yellow-400 font-mono font-bold">#{srv.providerServiceId}</td>
                       <td className="py-3.5 px-4 max-w-xs font-sans">
                         <div className="text-white font-bold truncate">{srv.serviceName}</div>
@@ -477,6 +555,10 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
                             title="Edit Service & Price"
                             onClick={() => {
                               setEditingService(srv);
+                              const pRate = srv.providerRate || 0;
+                              const sRate = srv.sellingRate || 0;
+                              const currentMargin = pRate > 0 ? (((sRate - pRate) / pRate) * 100).toFixed(0) : '20';
+                              setEditMarginPct(currentMargin);
                               setEditForm({
                                 serviceName: srv.serviceName,
                                 category: srv.category,
@@ -736,30 +818,111 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-zinc-400 mb-1 font-bold uppercase">Provider Cost / 1k ($ USD)</label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={editForm.providerRate ?? editingService.providerRate}
-                    onChange={(e) => setEditForm({ ...editForm, providerRate: Number(e.target.value) })}
-                    className="w-full bg-black border border-zinc-800 rounded-xl p-3 text-zinc-300 font-mono font-bold focus:outline-none focus:border-yellow-400"
-                    required
-                  />
+              {/* Price & Profit Margin Calculator */}
+              <div className="bg-black/60 border border-yellow-500/30 rounded-2xl p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-yellow-400 flex items-center gap-1.5">
+                    <Percent className="w-3.5 h-3.5" />
+                    <span>Price & Profit Margin Calculator</span>
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {[10, 20, 30, 50, 100].map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => {
+                          setEditMarginPct(p.toString());
+                          const pCost = Number(editForm.providerRate ?? editingService.providerRate) || 0;
+                          const newSelling = Number((pCost * (1 + p / 100)).toFixed(4));
+                          setEditForm({ ...editForm, sellingRate: newSelling });
+                        }}
+                        className="px-2 py-0.5 bg-zinc-900 hover:bg-yellow-500 hover:text-black text-[10px] font-mono font-bold text-zinc-300 rounded border border-zinc-800 transition-colors cursor-pointer"
+                      >
+                        +{p}%
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-yellow-400 mb-1 font-black uppercase">Selling Price / 1k ($ USD) *</label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={editForm.sellingRate ?? editingService.sellingRate}
-                    onChange={(e) => setEditForm({ ...editForm, sellingRate: Number(e.target.value) })}
-                    className="w-full bg-black border border-yellow-500/40 rounded-xl p-3 text-yellow-400 font-mono font-black text-sm focus:outline-none focus:border-yellow-400"
-                    required
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-zinc-400 mb-1 font-bold uppercase text-[10px]">Provider Cost / 1k ($ USD)</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={editForm.providerRate ?? editingService.providerRate}
+                      onChange={(e) => {
+                        const newCost = Number(e.target.value);
+                        const m = Number(editMarginPct) || 0;
+                        const newSell = Number((newCost * (1 + m / 100)).toFixed(4));
+                        setEditForm({ ...editForm, providerRate: newCost, sellingRate: newSell });
+                      }}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-zinc-300 font-mono font-bold focus:outline-none focus:border-yellow-400"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-amber-400 mb-1 font-bold uppercase text-[10px]">Margin % Markup</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-yellow-400 font-bold text-xs">%</span>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={editMarginPct}
+                        onChange={(e) => {
+                          const m = Number(e.target.value);
+                          setEditMarginPct(e.target.value);
+                          const pCost = Number(editForm.providerRate ?? editingService.providerRate) || 0;
+                          const newSelling = Number((pCost * (1 + m / 100)).toFixed(4));
+                          setEditForm({ ...editForm, sellingRate: newSelling });
+                        }}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-7 pr-2.5 py-2.5 text-yellow-400 font-mono font-bold focus:outline-none focus:border-yellow-400"
+                        placeholder="20"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-yellow-400 mb-1 font-black uppercase text-[10px]">Selling Rate / 1k ($ USD) *</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={editForm.sellingRate ?? editingService.sellingRate}
+                      onChange={(e) => {
+                        const newSell = Number(e.target.value);
+                        const pCost = Number(editForm.providerRate ?? editingService.providerRate) || 0;
+                        if (pCost > 0) {
+                          const calculatedMargin = (((newSell - pCost) / pCost) * 100).toFixed(1);
+                          setEditMarginPct(calculatedMargin);
+                        }
+                        setEditForm({ ...editForm, sellingRate: newSell });
+                      }}
+                      className="w-full bg-zinc-950 border border-yellow-500/50 rounded-xl p-2.5 text-yellow-400 font-mono font-black text-xs focus:outline-none focus:border-yellow-400"
+                      required
+                    />
+                  </div>
                 </div>
+
+                {/* Profit Preview */}
+                {(() => {
+                  const pCost = Number(editForm.providerRate ?? editingService.providerRate) || 0;
+                  const sRate = Number(editForm.sellingRate ?? editingService.sellingRate) || 0;
+                  const profitUSD = Math.max(0, sRate - pCost);
+                  const profitINR = profitUSD * 86;
+                  const sellingINR = sRate * 86;
+                  return (
+                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-2.5 flex items-center justify-between text-[11px] font-mono">
+                      <span className="text-zinc-300 font-sans">
+                        Selling in INR: <strong className="text-yellow-400">₹{sellingINR.toFixed(2)} / 1k</strong>
+                      </span>
+                      <span className="text-emerald-400 font-bold">
+                        Net Profit: +₹{profitINR.toFixed(2)} (+${profitUSD.toFixed(4)}) / 1k
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -809,6 +972,62 @@ export const ManageServices: React.FC<ManageServicesProps> = ({ currency }) => {
                   className="px-5 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-xl cursor-pointer shadow-lg shadow-yellow-500/20 active:scale-95"
                 >
                   Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Add Custom Category Modal */}
+      {showAddCategoryModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-zinc-950 border border-yellow-500/40 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+              <h3 className="text-sm font-black text-yellow-400 flex items-center gap-2">
+                <FolderPlus className="w-4 h-4 text-yellow-400" />
+                <span>Add New Category (Visible to Users)</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAddCategoryModal(false)}
+                className="text-zinc-500 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddCategory} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-zinc-300 mb-1 font-bold uppercase">Category Name *</label>
+                <input
+                  type="text"
+                  value={newCategoryInput}
+                  onChange={(e) => setNewCategoryInput(e.target.value)}
+                  placeholder="e.g. YouTube Monetization, Facebook Followers, etc."
+                  className="w-full bg-black border border-yellow-500/40 rounded-xl p-3 text-yellow-400 font-bold focus:outline-none focus:border-yellow-400"
+                  required
+                  autoFocus
+                />
+                <p className="text-[11px] text-zinc-500 mt-1.5">
+                  This new category will be saved and visible to all users in the New Order category dropdown and Services List.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-900">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCategoryModal(false)}
+                  className="px-4 py-2.5 bg-zinc-800 text-zinc-300 font-bold rounded-xl cursor-pointer hover:bg-zinc-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAddingCategory}
+                  className="px-5 py-2.5 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-xl cursor-pointer shadow-lg shadow-yellow-500/20 active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" />
+                  <span>{isAddingCategory ? 'Adding...' : 'Save & Publish Category'}</span>
                 </button>
               </div>
             </form>

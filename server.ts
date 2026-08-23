@@ -438,7 +438,7 @@ try {
 }
 
 // 1. Audio Streaming Endpoint (Streams uploaded MP3/WAV/WebM/M4A directly with range headers & CORS)
-app.get('/api/welcome-audio', (req, res) => {
+app.get('/api/welcome-audio', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept');
@@ -472,6 +472,17 @@ app.get('/api/welcome-audio', (req, res) => {
       if (fs.existsSync(fullPath) && fs.statSync(fullPath).size > 100) {
         audioFilePath = fullPath;
         break;
+      }
+    }
+  }
+
+  // If still not on disk (e.g. fresh container startup after Render sleep), restore from cloud store
+  if (!audioFilePath) {
+    const restored = await db.restoreWelcomeAudioFile();
+    if (restored) {
+      const target = path.join(UPLOADS_DIR, 'welcome_voice.mp3');
+      if (fs.existsSync(target) && fs.statSync(target).size > 100) {
+        audioFilePath = target;
       }
     }
   }
@@ -516,7 +527,7 @@ app.get('/api/welcome-audio', (req, res) => {
       'Accept-Ranges': 'bytes',
       'Content-Length': chunksize,
       'Content-Type': contentType,
-      'Cache-Control': 'public, max-age=3600',
+      'Cache-Control': 'public, max-age=86400',
     };
     res.writeHead(206, head);
     file.pipe(res);
@@ -525,7 +536,7 @@ app.get('/api/welcome-audio', (req, res) => {
       'Content-Length': fileSize,
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'public, max-age=3600',
+      'Cache-Control': 'public, max-age=86400',
     };
     res.writeHead(200, head);
     fs.createReadStream(audioFilePath).pipe(res);
@@ -546,7 +557,7 @@ app.get('/api/welcome-voice', (req, res) => {
   });
 });
 
-// Helper: Save Base64 Audio data directly to uploads and public folder
+// Helper: Save Base64 Audio data directly to uploads, public folder and Firebase Cloud Store
 function saveBase64AudioFile(base64Data: string, originalName?: string): string {
   try {
     if (!fs.existsSync(UPLOADS_DIR)) {
@@ -590,6 +601,19 @@ function saveBase64AudioFile(base64Data: string, originalName?: string): string 
       if (fs.existsSync(pubDir)) {
         fs.writeFileSync(path.join(pubDir, 'welcome_voice.mp3'), buffer);
       }
+    } catch (e) {}
+
+    // Cloud Persistence: Sync to Firebase Realtime Database dedicated audio node
+    try {
+      fetch('https://smm-shivam-2-default-rtdb.firebaseio.com/welcome_audio_store.json', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audioData: base64Data,
+          name: originalName || 'Official Welcome Audio',
+          updatedAt: new Date().toISOString(),
+        }),
+      }).catch((e) => console.warn('Cloud audio store PUT notice:', e));
     } catch (e) {}
 
     return `/api/welcome-audio?t=${Date.now()}`;

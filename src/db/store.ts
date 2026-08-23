@@ -542,18 +542,35 @@ class DatabaseStore {
     }
   }
 
-  public restoreWelcomeAudioFile(): void {
+  public async restoreWelcomeAudioFile(): Promise<boolean> {
     try {
-      const audioData = this.memoryDb.settings?.welcomeVoiceAudioData;
-      if (!audioData || typeof audioData !== 'string' || audioData.length < 50) {
-        return;
-      }
       const uploadsDir = path.join(process.cwd(), 'uploads');
+      const pubDir = path.join(process.cwd(), 'public');
       if (!fs.existsSync(uploadsDir)) {
         fs.mkdirSync(uploadsDir, { recursive: true });
       }
       const targetFile = path.join(uploadsDir, 'welcome_voice.mp3');
-      if (!fs.existsSync(targetFile) || fs.statSync(targetFile).size < 100) {
+      if (fs.existsSync(targetFile) && fs.statSync(targetFile).size > 100) {
+        return true;
+      }
+
+      // 1. Check if memory settings has audioData
+      let audioData = this.memoryDb.settings?.welcomeVoiceAudioData;
+
+      // 2. If not, fetch from persistent cloud audio node
+      if (!audioData || typeof audioData !== 'string' || audioData.length < 50) {
+        try {
+          const res = await fetch(`${DatabaseStore.RTDB_REST_URL}/welcome_audio_store.json`);
+          if (res.ok) {
+            const cloudAudio = await res.json();
+            if (cloudAudio && cloudAudio.audioData) {
+              audioData = cloudAudio.audioData;
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (audioData && typeof audioData === 'string' && audioData.length > 50) {
         let base64Payload = audioData;
         const commaIdx = audioData.indexOf(',');
         if (commaIdx !== -1) {
@@ -562,10 +579,18 @@ class DatabaseStore {
         base64Payload = base64Payload.replace(/[^A-Za-z0-9+/=]/g, '');
         const buffer = Buffer.from(base64Payload, 'base64');
         fs.writeFileSync(targetFile, buffer);
+        try {
+          if (fs.existsSync(pubDir)) {
+            fs.writeFileSync(path.join(pubDir, 'welcome_voice.mp3'), buffer);
+          }
+        } catch (e) {}
         console.log('⚡ Restored persistent welcome voice song from cloud store to disk (' + buffer.length + ' bytes)');
+        return true;
       }
+      return false;
     } catch (e) {
       console.warn('restoreWelcomeAudioFile warning:', e);
+      return false;
     }
   }
 

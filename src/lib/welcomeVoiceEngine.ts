@@ -20,6 +20,7 @@ export interface VoicePlayerState {
   audioUrl: string;
   currentTime: number;
   duration: number;
+  loadError?: string | null;
 }
 
 type StateListener = (state: VoicePlayerState) => void;
@@ -28,6 +29,7 @@ let globalAudio: HTMLAudioElement | null = null;
 let currentConfig: WelcomeVoiceConfig = {};
 let stateListeners: Set<StateListener> = new Set();
 let isSpeechActive = false;
+let retryCount = 0;
 
 let playerState: VoicePlayerState = {
   isPlaying: false,
@@ -39,6 +41,7 @@ let playerState: VoicePlayerState = {
   audioUrl: '',
   currentTime: 0,
   duration: 0,
+  loadError: null,
 };
 
 const notifyListeners = () => {
@@ -71,56 +74,6 @@ if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
   } catch (e) {}
 }
 
-// Web Audio API Majestic Welcome Chime Synthesizer
-// 100% resilient - works on all browsers, iframes, mobile devices without any external network or codec dependency.
-export const playWebAudioWelcomeChime = (volume: number = 0.8, onEnded?: () => void): boolean => {
-  if (typeof window === 'undefined') return false;
-  try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return false;
-    const ctx = new AudioCtx();
-    if (ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
-    }
-
-    const notes = [
-      { freq: 523.25, time: 0.0, dur: 0.8 },  // C5
-      { freq: 659.25, time: 0.22, dur: 0.8 }, // E5
-      { freq: 783.99, time: 0.44, dur: 1.1 }, // G5
-      { freq: 1046.50, time: 0.68, dur: 1.8 }, // C6
-      { freq: 1318.51, time: 0.95, dur: 2.2 }, // E6
-    ];
-
-    const masterGain = ctx.createGain();
-    masterGain.gain.setValueAtTime(Math.max(0.1, Math.min(1, volume)) * 0.35, ctx.currentTime);
-    masterGain.connect(ctx.destination);
-
-    notes.forEach(({ freq, time, dur }) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + time);
-
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime + time);
-      gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + time + 0.06);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + time + dur);
-
-      osc.connect(gain);
-      gain.connect(masterGain);
-
-      osc.start(ctx.currentTime + time);
-      osc.stop(ctx.currentTime + time + dur + 0.1);
-    });
-
-    if (onEnded) {
-      setTimeout(onEnded, 3000);
-    }
-    return true;
-  } catch (e) {
-    return false;
-  }
-};
-
 export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
   if (typeof window === 'undefined') return;
 
@@ -146,7 +99,6 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
   if (globalAudio) {
     try {
       globalAudio.pause();
-      globalAudio.currentTime = 0;
     } catch (e) {}
   }
   if ('speechSynthesis' in window) {
@@ -157,19 +109,20 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
   }
 
   if (isCustomAudio) {
-    const effectiveUrl =
-      audioUrl && audioUrl.length > 5
-        ? audioUrl
-        : `/api/welcome-audio?t=${Date.now()}`;
+    let effectiveUrl = audioUrl;
+    if (!effectiveUrl || effectiveUrl.length < 5) {
+      effectiveUrl = `/api/welcome-audio?t=${Date.now()}`;
+    }
 
     try {
       if (!globalAudio) {
         globalAudio = new Audio();
       }
+      retryCount = 0;
       globalAudio.preload = 'auto';
       globalAudio.src = effectiveUrl;
       globalAudio.volume = volume;
-      globalAudio.loop = false; // Plays full song smoothly in background
+      globalAudio.loop = true; // Loops background music so it never stops abruptly
 
       globalAudio.onplay = () => {
         playerState = {
@@ -181,6 +134,7 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
           title,
           mode: 'custom_audio',
           audioUrl: effectiveUrl,
+          loadError: null,
         };
         notifyListeners();
       };
@@ -204,6 +158,7 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
       };
 
       globalAudio.onended = () => {
+        // If not looping, mark as ended
         playerState = {
           ...playerState,
           isPlaying: false,
@@ -214,40 +169,50 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
       };
 
       globalAudio.onerror = (e) => {
-        console.warn('Audio stream error, attempting fallback track / chime without TTS speech:', e);
-        if (globalAudio && globalAudio.src !== 'https://assets.mixkit.co/music/preview/mixkit-cyber-city-108.mp3') {
-          globalAudio.src = 'https://assets.mixkit.co/music/preview/mixkit-cyber-city-108.mp3';
-          globalAudio.play().catch(() => {
-            playWebAudioWelcomeChime(volume, () => {
-              playerState = { ...playerState, isPlaying: false, isPaused: false };
-              notifyListeners();
-            });
-          });
+        console.warn('Audio stream error on URL:', effectiveUrl, e);
+        if (retryCount === 0 && effectiveUrl !== '/api/welcome-audio') {
+          retryCount++;
+          if (globalAudio) {
+            globalAudio.src = `/api/welcome-audio?t=${Date.now()}`;
+            globalAudio.play().catch(() => {});
+          }
         } else {
-          playWebAudioWelcomeChime(volume, () => {
-            playerState = { ...playerState, isPlaying: false, isPaused: false };
-            notifyListeners();
-          });
+          playerState = {
+            ...playerState,
+            isPlaying: false,
+            isPaused: false,
+            loadError: 'Failed to stream audio file',
+          };
+          notifyListeners();
         }
       };
 
       const playPromise = globalAudio.play();
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
-          console.warn('Playback play promise notice:', err);
-          // If direct autoplay blocked, do not speak TTS - trigger chime
-          playWebAudioWelcomeChime(volume, () => {
-            playerState = { ...playerState, isPlaying: false, isPaused: false };
-            notifyListeners();
-          });
+          console.warn('Audio play notice (user interaction required):', err?.message || err);
+          // Keep state ready so when user interacts or clicks it plays instantly
+          playerState = {
+            ...playerState,
+            isPlaying: false,
+            isPaused: false,
+            hasStarted: false,
+            title,
+            mode: 'custom_audio',
+            audioUrl: effectiveUrl,
+          };
+          notifyListeners();
         });
       }
     } catch (e) {
-      console.warn('Audio engine error:', e);
-      playWebAudioWelcomeChime(volume, () => {
-        playerState = { ...playerState, isPlaying: false, isPaused: false };
-        notifyListeners();
-      });
+      console.warn('Audio engine start error:', e);
+      playerState = {
+        ...playerState,
+        isPlaying: false,
+        isPaused: false,
+        loadError: 'Audio playback failed',
+      };
+      notifyListeners();
     }
   } else {
     // Mode is explicitly set to AI TTS Speech by admin
@@ -257,18 +222,11 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
 
 const startTTS = (text: string, volume: number, title: string) => {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-    playWebAudioWelcomeChime(volume, () => {
-      playerState = { ...playerState, isPlaying: false, isPaused: false };
-      notifyListeners();
-    });
     playerState = {
       ...playerState,
-      isPlaying: true,
+      isPlaying: false,
       isPaused: false,
-      hasStarted: true,
-      volume,
-      title: title || 'SMM SHIVAM Welcome Chime',
-      mode: 'tts_speech',
+      loadError: 'Text to speech not supported',
     };
     notifyListeners();
     return;
@@ -303,6 +261,7 @@ const startTTS = (text: string, volume: number, title: string) => {
         volume,
         title,
         mode: 'tts_speech',
+        loadError: null,
       };
       notifyListeners();
     };
@@ -319,30 +278,23 @@ const startTTS = (text: string, volume: number, title: string) => {
 
     utterance.onerror = () => {
       isSpeechActive = false;
-      playWebAudioWelcomeChime(volume, () => {
-        playerState = {
-          ...playerState,
-          isPlaying: false,
-          isPaused: false,
-        };
-        notifyListeners();
-      });
+      playerState = {
+        ...playerState,
+        isPlaying: false,
+        isPaused: false,
+        loadError: 'TTS playback error',
+      };
+      notifyListeners();
     };
 
     window.speechSynthesis.speak(utterance);
   } catch (err) {
-    playWebAudioWelcomeChime(volume, () => {
-      playerState = { ...playerState, isPlaying: false, isPaused: false };
-      notifyListeners();
-    });
+    console.warn('TTS Speech error:', err);
     playerState = {
       ...playerState,
-      isPlaying: true,
+      isPlaying: false,
       isPaused: false,
-      hasStarted: true,
-      volume,
-      title: title || 'SMM SHIVAM Welcome Chime',
-      mode: 'tts_speech',
+      loadError: 'TTS Speech failed',
     };
     notifyListeners();
   }

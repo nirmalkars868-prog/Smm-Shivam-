@@ -24,7 +24,6 @@ import {
   Disc,
 } from 'lucide-react';
 import { AdminSettings } from '../../types';
-import { playWebAudioWelcomeChime } from '../../lib/welcomeVoiceEngine';
 
 interface WelcomeVoiceProps {
   settings?: AdminSettings;
@@ -254,9 +253,12 @@ export const WelcomeVoice: React.FC<WelcomeVoiceProps> = ({ settings, onSettings
         };
 
         audio.onerror = (e) => {
-          console.warn('Audio play error, falling back to Web Audio Chime:', e);
-          playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
-          setIsPlaying(true);
+          console.warn('Audio play error:', e);
+          setIsPlaying(false);
+          setStatusMsg({
+            type: 'error',
+            text: 'Unable to stream audio track. Please verify the URL or re-upload the audio file.',
+          });
         };
 
         audioRef.current = audio;
@@ -273,14 +275,20 @@ export const WelcomeVoice: React.FC<WelcomeVoiceProps> = ({ settings, onSettings
             })
             .catch((err) => {
               console.warn('Audio play promise rejected:', err);
-              playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
-              setIsPlaying(true);
+              setIsPlaying(false);
+              setStatusMsg({
+                type: 'error',
+                text: 'Audio preview blocked by browser. Click Play again to preview.',
+              });
             });
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Audio initialization error:', err);
-        playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
-        setIsPlaying(true);
+        setIsPlaying(false);
+        setStatusMsg({
+          type: 'error',
+          text: err?.message || 'Error initializing audio player.',
+        });
       }
     } else {
       // TTS Playback
@@ -310,17 +318,18 @@ export const WelcomeVoice: React.FC<WelcomeVoiceProps> = ({ settings, onSettings
           utterance.onend = () => setIsPlaying(false);
           utterance.onerror = () => {
             setIsPlaying(false);
-            playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
+            setStatusMsg({
+              type: 'error',
+              text: 'Speech synthesis error. Please check browser voice support.',
+            });
           };
 
           window.speechSynthesis.speak(utterance);
         } catch (err) {
-          playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
-          setIsPlaying(true);
+          setIsPlaying(false);
         }
       } else {
-        playWebAudioWelcomeChime(volume, () => setIsPlaying(false));
-        setIsPlaying(true);
+        setIsPlaying(false);
       }
     }
   };

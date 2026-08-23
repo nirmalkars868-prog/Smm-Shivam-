@@ -459,23 +459,19 @@ app.get('/api/welcome-audio', (req, res) => {
 
   for (const file of possibleFiles) {
     const fullPath = path.join(UPLOADS_DIR, file);
-    if (fs.existsSync(fullPath)) {
+    if (fs.existsSync(fullPath) && fs.statSync(fullPath).size > 100) {
       audioFilePath = fullPath;
       break;
     }
   }
 
-  if (!audioFilePath || !fs.existsSync(audioFilePath)) {
-    // Check if persistent base64 audio is present in database store, and rebuild on disk immediately
-    const s = db.getSettings();
-    if (s.welcomeVoiceAudioData && s.welcomeVoiceAudioData.length > 50) {
-      saveBase64AudioFile(s.welcomeVoiceAudioData, s.welcomeVoiceName);
-      for (const file of possibleFiles) {
-        const fullPath = path.join(UPLOADS_DIR, file);
-        if (fs.existsSync(fullPath)) {
-          audioFilePath = fullPath;
-          break;
-        }
+  if (!audioFilePath) {
+    const pubDir = path.join(process.cwd(), 'public');
+    for (const file of possibleFiles) {
+      const fullPath = path.join(pubDir, file);
+      if (fs.existsSync(fullPath) && fs.statSync(fullPath).size > 100) {
+        audioFilePath = fullPath;
+        break;
       }
     }
   }
@@ -484,10 +480,10 @@ app.get('/api/welcome-audio', (req, res) => {
     // If no uploaded audio on disk, check if settings has external URL
     const s = db.getSettings();
     if (s.welcomeVoiceUrl && s.welcomeVoiceUrl.startsWith('http')) {
-      return res.redirect(s.welcomeVoiceUrl);
+      return res.redirect(302, s.welcomeVoiceUrl);
     }
     // Fallback to high quality royalty-free music stream URL so audio decoder never fails
-    return res.redirect('https://assets.mixkit.co/music/preview/mixkit-cyber-city-108.mp3');
+    return res.redirect(302, 'https://assets.mixkit.co/music/preview/mixkit-cyber-city-108.mp3');
   }
 
   const stat = fs.statSync(audioFilePath);
@@ -520,7 +516,7 @@ app.get('/api/welcome-audio', (req, res) => {
       'Accept-Ranges': 'bytes',
       'Content-Length': chunksize,
       'Content-Type': contentType,
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Cache-Control': 'public, max-age=3600',
     };
     res.writeHead(206, head);
     file.pipe(res);
@@ -529,7 +525,7 @@ app.get('/api/welcome-audio', (req, res) => {
       'Content-Length': fileSize,
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Cache-Control': 'public, max-age=3600',
     };
     res.writeHead(200, head);
     fs.createReadStream(audioFilePath).pipe(res);
@@ -550,29 +546,11 @@ app.get('/api/welcome-voice', (req, res) => {
   });
 });
 
-// Helper: Save Base64 Audio data directly to uploads/welcome_voice.mp3
+// Helper: Save Base64 Audio data directly to uploads and public folder
 function saveBase64AudioFile(base64Data: string, originalName?: string): string {
   try {
     if (!fs.existsSync(UPLOADS_DIR)) {
       fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-    }
-
-    // Remove any previously uploaded voice files to prevent collisions
-    const possibleFiles = [
-      'welcome_voice.mp3',
-      'welcome_voice.m4a',
-      'welcome_voice.wav',
-      'welcome_voice.aac',
-      'welcome_voice.webm',
-      'welcome_voice.ogg',
-    ];
-    for (const f of possibleFiles) {
-      const p = path.join(UPLOADS_DIR, f);
-      if (fs.existsSync(p)) {
-        try {
-          fs.unlinkSync(p);
-        } catch (e) {}
-      }
     }
 
     let ext = 'mp3';
@@ -637,7 +615,6 @@ app.post('/api/admin/welcome-voice/upload', async (req, res) => {
     const updated = await db.updateSettings({
       welcomeVoiceEnabled: true,
       welcomeVoiceUrl: audioUrl,
-      welcomeVoiceAudioData: rawAudio,
       welcomeVoiceName: audioName,
       welcomeVoiceMode: 'custom_audio',
     });
@@ -672,7 +649,6 @@ app.post('/api/admin/welcome-voice', async (req, res) => {
     // If audioUrl is a large Base64 string, write it to disk and convert to fast streaming url
     if (audioUrl !== undefined) {
       if (typeof audioUrl === 'string' && audioUrl.startsWith('data:audio/')) {
-        payload.welcomeVoiceAudioData = audioUrl;
         audioUrl = saveBase64AudioFile(audioUrl, name);
       }
       payload.welcomeVoiceUrl = String(audioUrl);
@@ -691,8 +667,8 @@ app.post('/api/admin/welcome-voice', async (req, res) => {
       settings: updated,
     });
   } catch (err: any) {
-    console.error('Welcome Voice update error:', err);
-    res.status(500).json({ error: err.message || 'Failed to save Welcome Voice' });
+    console.error('Save welcome voice error:', err);
+    res.status(500).json({ error: err.message || 'Failed to update Welcome Voice' });
   }
 });
 

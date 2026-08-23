@@ -51,7 +51,7 @@ const CURATED_TRACKS = [
     id: 'royal-cinema',
     name: '👑 Royal Grandeur Cinematic Intro',
     url: 'https://assets.mixkit.co/music/preview/mixkit-game-level-music-689.mp3',
-    genre: 'Cinematic / Indian Royal',
+    genre: 'Cinematic / Royal',
     desc: 'Majestic trumpets & deep percussion for India’s #1 SMM brand',
   },
   {
@@ -62,11 +62,32 @@ const CURATED_TRACKS = [
     desc: 'Trending Instagram/Reels style modern bass bounce',
   },
   {
+    id: 'deep-synth',
+    name: '🚀 Night Pulse Synthwave Drive',
+    url: 'https://assets.mixkit.co/music/preview/mixkit-driving-ambition-32.mp3',
+    genre: 'Synthwave',
+    desc: 'Electric retro synth rhythm that gives a premium VIP feel',
+  },
+  {
+    id: 'club-edm',
+    name: '💥 Ultra Hype Festival EDM Drop',
+    url: 'https://assets.mixkit.co/music/preview/mixkit-energetic-hip-hop-8.mp3',
+    genre: 'EDM Hype',
+    desc: 'Exciting dynamic beats that boost user order activity',
+  },
+  {
     id: 'chill-lofi',
     name: '☕ Aesthetic Lo-Fi Smooth Lounge',
     url: 'https://assets.mixkit.co/music/preview/mixkit-chill-bro-494.mp3',
     genre: 'Lo-Fi Chill',
     desc: 'Relaxed, luxurious background melody for effortless browsing',
+  },
+  {
+    id: 'deluxe-groove',
+    name: '✨ Luxury VIP Deep House Groove',
+    url: 'https://assets.mixkit.co/music/preview/mixkit-spirit-of-the-sun-89.mp3',
+    genre: 'Deep House',
+    desc: 'Smooth, polished ambient groove for high-converting panels',
   },
 ];
 
@@ -893,12 +914,12 @@ export const WelcomeVoice: React.FC<WelcomeVoiceProps> = ({ settings, onSettings
             </div>
             <div>
               <h3 className="text-base font-black text-slate-100">2. Direct Online MP3 Link</h3>
-              <p className="text-xs text-zinc-400">Paste any public MP3 link or cloud storage URL</p>
+              <p className="text-xs text-zinc-400">Paste any public MP3 link or permanent cloud storage URL</p>
             </div>
           </div>
 
           <div className="space-y-3">
-            <div className="relative">
+            <div className="flex items-center gap-2">
               <input
                 type="url"
                 value={voiceMode === 'custom_audio' && voiceUrl.startsWith('http') ? voiceUrl : ''}
@@ -910,11 +931,21 @@ export const WelcomeVoice: React.FC<WelcomeVoiceProps> = ({ settings, onSettings
                   setIsEnabled(true);
                 }}
                 placeholder="https://example.com/my-song.mp3"
-                className="w-full bg-black border border-zinc-800 focus:border-yellow-400 rounded-2xl px-4 py-3.5 text-xs font-mono text-slate-100 focus:outline-none transition-colors"
+                className="flex-1 bg-black border border-zinc-800 focus:border-yellow-400 rounded-2xl px-4 py-3.5 text-xs font-mono text-slate-100 focus:outline-none transition-colors"
               />
+              {voiceUrl && voiceUrl.startsWith('http') && (
+                <button
+                  type="button"
+                  onClick={togglePlay}
+                  className="px-3.5 py-3.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-2xl text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                  <span>{isPlaying ? 'Pause' : 'Test'}</span>
+                </button>
+              )}
             </div>
             <p className="text-[11px] text-zinc-500">
-              💡 Tip: You can paste direct links from Google Drive, Dropbox, Discord CDN, FreeMusicArchive, or any web audio host.
+              💡 Tip: Direct online links (Dropbox, Google Drive, Discord CDN, AWS S3, Catbox) stay 100% active permanently and never get lost after server restarts!
             </p>
           </div>
         </div>

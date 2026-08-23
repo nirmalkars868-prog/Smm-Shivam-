@@ -790,10 +790,14 @@ class DatabaseStore {
       }
 
       if (this.memoryDb.settings) {
+        const cleanSettings = cleanForFirebase({ ...this.memoryDb.settings });
+        if (cleanSettings.welcomeVoiceAudioData) {
+          delete cleanSettings.welcomeVoiceAudioData;
+        }
         fetch(`${DatabaseStore.RTDB_REST_URL}/settings.json`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cleanForFirebase(this.memoryDb.settings)),
+          body: JSON.stringify(cleanSettings),
         }).catch(() => {});
       }
     } catch (err) {
@@ -858,7 +862,6 @@ class DatabaseStore {
   private sanitizeDbForRtdb(db: DatabaseSchema): any {
     const cleanSettings = { ...db.settings };
     if (cleanSettings.welcomeVoiceAudioData) {
-      // Exclude giant audio base64 payload from RTDB cloud sync so payload stays lightweight (< 100KB)
       delete cleanSettings.welcomeVoiceAudioData;
     }
     return {

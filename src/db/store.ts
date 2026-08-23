@@ -94,11 +94,12 @@ const defaultSettings: AdminSettings = {
   // Welcome Voice default settings
   welcomeVoiceEnabled: true,
   welcomeVoiceUrl: '',
+  welcomeVoiceAudioData: '',
   welcomeVoiceName: '',
   welcomeVoiceText: 'WELCOME TO SMM SHIVAM OFFICIAL',
-  welcomeVoiceVolume: 0.9,
+  welcomeVoiceVolume: 0.95,
   welcomeVoicePlayOnReload: true,
-  welcomeVoiceMode: 'tts_speech',
+  welcomeVoiceMode: 'custom_audio',
 };
 
 // Initial Seed Data
@@ -531,12 +532,40 @@ class DatabaseStore {
                 ...((parsed.settings && parsed.settings.referralSettings) || {}),
               },
             };
+            this.restoreWelcomeAudioFile();
           }
           console.log('⚡ Loaded store data from local persistent disk JSON file');
         }
       }
     } catch (err) {
       console.warn('store.ts loadFromDisk warning:', err);
+    }
+  }
+
+  public restoreWelcomeAudioFile(): void {
+    try {
+      const audioData = this.memoryDb.settings?.welcomeVoiceAudioData;
+      if (!audioData || typeof audioData !== 'string' || audioData.length < 50) {
+        return;
+      }
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      const targetFile = path.join(uploadsDir, 'welcome_voice.mp3');
+      if (!fs.existsSync(targetFile) || fs.statSync(targetFile).size < 100) {
+        let base64Payload = audioData;
+        const commaIdx = audioData.indexOf(',');
+        if (commaIdx !== -1) {
+          base64Payload = audioData.substring(commaIdx + 1);
+        }
+        base64Payload = base64Payload.replace(/[^A-Za-z0-9+/=]/g, '');
+        const buffer = Buffer.from(base64Payload, 'base64');
+        fs.writeFileSync(targetFile, buffer);
+        console.log('⚡ Restored persistent welcome voice song from cloud store to disk (' + buffer.length + ' bytes)');
+      }
+    } catch (e) {
+      console.warn('restoreWelcomeAudioFile warning:', e);
     }
   }
 
@@ -571,6 +600,7 @@ class DatabaseStore {
                 ...((parsed.settings && parsed.settings.referralSettings) || {}),
               },
             };
+            this.restoreWelcomeAudioFile();
           }
           this.cleanEmptyCategories();
           this.ensureAdminUserCredentials();
@@ -620,6 +650,7 @@ class DatabaseStore {
                     ...((parsed.settings && parsed.settings.referralSettings) || {}),
                   },
                 };
+                this.restoreWelcomeAudioFile();
               }
               this.cleanEmptyCategories();
               this.ensureAdminUserCredentials();
@@ -656,6 +687,7 @@ class DatabaseStore {
                     ...((parsed.settings && parsed.settings.referralSettings) || {}),
                   },
                 };
+                this.restoreWelcomeAudioFile();
               }
               this.ensureAdminUserCredentials();
               this.saveToDisk();

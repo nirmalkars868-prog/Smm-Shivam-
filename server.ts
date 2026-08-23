@@ -466,6 +466,21 @@ app.get('/api/welcome-audio', (req, res) => {
   }
 
   if (!audioFilePath || !fs.existsSync(audioFilePath)) {
+    // Check if persistent base64 audio is present in database store, and rebuild on disk immediately
+    const s = db.getSettings();
+    if (s.welcomeVoiceAudioData && s.welcomeVoiceAudioData.length > 50) {
+      saveBase64AudioFile(s.welcomeVoiceAudioData, s.welcomeVoiceName);
+      for (const file of possibleFiles) {
+        const fullPath = path.join(UPLOADS_DIR, file);
+        if (fs.existsSync(fullPath)) {
+          audioFilePath = fullPath;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!audioFilePath || !fs.existsSync(audioFilePath)) {
     // If no uploaded audio on disk, check if settings has external URL
     const s = db.getSettings();
     if (s.welcomeVoiceUrl && s.welcomeVoiceUrl.startsWith('http')) {
@@ -613,6 +628,7 @@ app.post('/api/admin/welcome-voice/upload', async (req, res) => {
     const updated = await db.updateSettings({
       welcomeVoiceEnabled: true,
       welcomeVoiceUrl: audioUrl,
+      welcomeVoiceAudioData: rawAudio,
       welcomeVoiceName: audioName,
       welcomeVoiceMode: 'custom_audio',
     });
@@ -647,6 +663,7 @@ app.post('/api/admin/welcome-voice', async (req, res) => {
     // If audioUrl is a large Base64 string, write it to disk and convert to fast streaming url
     if (audioUrl !== undefined) {
       if (typeof audioUrl === 'string' && audioUrl.startsWith('data:audio/')) {
+        payload.welcomeVoiceAudioData = audioUrl;
         audioUrl = saveBase64AudioFile(audioUrl, name);
       }
       payload.welcomeVoiceUrl = String(audioUrl);
@@ -675,6 +692,7 @@ app.delete('/api/admin/welcome-voice', async (req, res) => {
     const updated = await db.updateSettings({
       welcomeVoiceEnabled: false,
       welcomeVoiceUrl: '',
+      welcomeVoiceAudioData: '',
       welcomeVoiceName: '',
       welcomeVoiceText: '',
       welcomeVoiceMode: 'none',

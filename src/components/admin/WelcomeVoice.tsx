@@ -524,6 +524,10 @@ export const WelcomeVoice: React.FC<WelcomeVoiceProps> = ({ settings, onSettings
         throw new Error(data.error || 'Failed to save Welcome Voice settings.');
       }
 
+      try {
+        localStorage.setItem('smm_welcome_voice_cached_song', JSON.stringify(payload));
+      } catch {}
+
       setStatusMsg({
         type: 'success',
         text: '⚡ Welcome Voice & Song saved successfully! All users will now receive the popup and hear this song on opening/reloading.',
@@ -560,7 +564,10 @@ export const WelcomeVoice: React.FC<WelcomeVoiceProps> = ({ settings, onSettings
       setVoiceUrl('');
       setVoiceName('');
       setVoiceText('');
-      setVoiceMode('tts_speech');
+      setVoiceMode('custom_audio');
+      try {
+        localStorage.removeItem('smm_welcome_voice_cached_song');
+      } catch {}
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;

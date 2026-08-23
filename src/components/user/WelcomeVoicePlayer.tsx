@@ -46,15 +46,48 @@ export const WelcomeVoicePlayer: React.FC<WelcomeVoicePlayerProps> = ({ settings
   const [isMinimized, setIsMinimized] = useState<boolean>(false);
   const [isPlayerBarVisible, setIsPlayerBarVisible] = useState<boolean>(false);
 
-  const isEnabled = settings?.welcomeVoiceEnabled !== false;
-  const audioUrl = settings?.welcomeVoiceUrl || '';
-  const voiceText = settings?.welcomeVoiceText || 'WELCOME TO SMM SHIVAM OFFICIAL';
-  const volume = settings?.welcomeVoiceVolume !== undefined ? settings.welcomeVoiceVolume : 0.95;
-  const playOnReload = settings?.welcomeVoicePlayOnReload !== false;
-  const mode = settings?.welcomeVoiceMode || (audioUrl ? 'custom_audio' : 'tts_speech');
+  // Safe cached retrieval for instant playback without network delays
+  const getCachedConfig = () => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem('smm_welcome_voice_cached_song');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const cached = getCachedConfig();
+  const isEnabled = settings?.welcomeVoiceEnabled !== undefined ? settings.welcomeVoiceEnabled : (cached?.welcomeVoiceEnabled !== false);
+  const audioUrl = settings?.welcomeVoiceUrl || cached?.welcomeVoiceUrl || '';
+  const voiceText = settings?.welcomeVoiceText || cached?.welcomeVoiceText || 'WELCOME TO SMM SHIVAM OFFICIAL';
+  const volume = settings?.welcomeVoiceVolume !== undefined ? settings.welcomeVoiceVolume : (cached?.welcomeVoiceVolume !== undefined ? cached.welcomeVoiceVolume : 0.95);
+  const playOnReload = settings?.welcomeVoicePlayOnReload !== undefined ? settings.welcomeVoicePlayOnReload : (cached?.welcomeVoicePlayOnReload !== false);
+  const mode = settings?.welcomeVoiceMode || cached?.welcomeVoiceMode || (audioUrl ? 'custom_audio' : 'custom_audio');
   const displayTitle =
     settings?.welcomeVoiceName ||
+    cached?.welcomeVoiceName ||
     (mode === 'custom_audio' ? 'SMM SHIVAM Official Welcome Song' : voiceText);
+
+  // Sync settings to localStorage cache
+  useEffect(() => {
+    if (settings && (settings.welcomeVoiceUrl || settings.welcomeVoiceName || settings.welcomeVoiceMode)) {
+      try {
+        localStorage.setItem(
+          'smm_welcome_voice_cached_song',
+          JSON.stringify({
+            welcomeVoiceEnabled: settings.welcomeVoiceEnabled,
+            welcomeVoiceUrl: settings.welcomeVoiceUrl,
+            welcomeVoiceName: settings.welcomeVoiceName,
+            welcomeVoiceText: settings.welcomeVoiceText,
+            welcomeVoiceVolume: settings.welcomeVoiceVolume,
+            welcomeVoicePlayOnReload: settings.welcomeVoicePlayOnReload,
+            welcomeVoiceMode: settings.welcomeVoiceMode || 'custom_audio',
+          })
+        );
+      } catch {}
+    }
+  }, [settings]);
 
   // Subscribe to audio engine updates
   useEffect(() => {

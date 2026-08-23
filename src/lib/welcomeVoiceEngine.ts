@@ -137,8 +137,10 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
   const audioUrl = (currentConfig.audioUrl || '').trim();
   const text = (currentConfig.text || 'WELCOME TO SMM SHIVAM OFFICIAL').trim();
   const volume = currentConfig.volume !== undefined ? Math.max(0, Math.min(1, currentConfig.volume)) : 0.95;
-  const isCustomAudio = currentConfig.mode === 'custom_audio' || (audioUrl.length > 5 && currentConfig.mode !== 'tts_speech');
-  const title = currentConfig.name || (isCustomAudio ? 'SMM SHIVAM Welcome Audio' : text);
+  const isCustomAudio =
+    currentConfig.mode === 'custom_audio' ||
+    (currentConfig.mode !== 'tts_speech' && (audioUrl.length > 3 || Boolean(currentConfig.name)));
+  const title = currentConfig.name || (isCustomAudio ? 'SMM SHIVAM Official Welcome Song' : text);
 
   // Stop any ongoing audio before starting
   if (globalAudio) {
@@ -154,16 +156,21 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
     } catch (e) {}
   }
 
-  if (isCustomAudio && audioUrl && audioUrl !== '') {
+  if (isCustomAudio) {
+    const effectiveUrl =
+      audioUrl && audioUrl.length > 5
+        ? audioUrl
+        : `/api/welcome-audio?t=${Date.now()}`;
+
     try {
       if (!globalAudio) {
         globalAudio = new Audio();
       }
       globalAudio.crossOrigin = 'anonymous';
       globalAudio.preload = 'auto';
-      globalAudio.src = audioUrl;
+      globalAudio.src = effectiveUrl;
       globalAudio.volume = volume;
-      globalAudio.loop = false; // continuous full song playback
+      globalAudio.loop = false; // Plays full song smoothly in background
 
       globalAudio.onplay = () => {
         playerState = {
@@ -174,7 +181,7 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
           volume,
           title,
           mode: 'custom_audio',
-          audioUrl,
+          audioUrl: effectiveUrl,
         };
         notifyListeners();
       };
@@ -207,22 +214,44 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
         notifyListeners();
       };
 
-      globalAudio.onerror = () => {
-        // If custom audio file fails to load or codec unsupported, smoothly fallback
-        startTTS(text, volume, title);
+      globalAudio.onerror = (e) => {
+        console.warn('Audio stream error, attempting fallback track / chime without TTS speech:', e);
+        if (globalAudio && globalAudio.src !== 'https://assets.mixkit.co/music/preview/mixkit-cyber-city-108.mp3') {
+          globalAudio.src = 'https://assets.mixkit.co/music/preview/mixkit-cyber-city-108.mp3';
+          globalAudio.play().catch(() => {
+            playWebAudioWelcomeChime(volume, () => {
+              playerState = { ...playerState, isPlaying: false, isPaused: false };
+              notifyListeners();
+            });
+          });
+        } else {
+          playWebAudioWelcomeChime(volume, () => {
+            playerState = { ...playerState, isPlaying: false, isPaused: false };
+            notifyListeners();
+          });
+        }
       };
 
       const playPromise = globalAudio.play();
       if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          // If direct audio play was blocked or unsupported, fallback to speech/chime
-          startTTS(text, volume, title);
+        playPromise.catch((err) => {
+          console.warn('Playback play promise notice:', err);
+          // If direct autoplay blocked, do not speak TTS - trigger chime
+          playWebAudioWelcomeChime(volume, () => {
+            playerState = { ...playerState, isPlaying: false, isPaused: false };
+            notifyListeners();
+          });
         });
       }
     } catch (e) {
-      startTTS(text, volume, title);
+      console.warn('Audio engine error:', e);
+      playWebAudioWelcomeChime(volume, () => {
+        playerState = { ...playerState, isPlaying: false, isPaused: false };
+        notifyListeners();
+      });
     }
   } else {
+    // Mode is explicitly set to AI TTS Speech by admin
     startTTS(text, volume, title);
   }
 };

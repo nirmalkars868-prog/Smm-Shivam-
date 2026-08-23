@@ -341,6 +341,7 @@ export interface AdminSettings {
   // --- WELCOME VOICE (DYNAMIC AUDIO GREETING) ---
   welcomeVoiceEnabled?: boolean;
   welcomeVoiceUrl?: string; // Audio Data URL (base64) or direct MP3/WAV audio link
+  welcomeVoiceAudioData?: string; // Persistent Base64 audio payload stored for cold restarts / Render instances
   welcomeVoiceName?: string; // Filename or title of the audio
   welcomeVoiceText?: string; // Text phrase for TTS or voice description (e.g. "WELCOME TO SMM SHIVAM OFFICIAL")
   welcomeVoiceVolume?: number; // Volume 0.0 to 1.0 (default: 0.9)

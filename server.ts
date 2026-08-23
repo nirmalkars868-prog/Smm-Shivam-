@@ -605,6 +605,15 @@ function saveBase64AudioFile(base64Data: string, originalName?: string): string 
     const fileName = `welcome_voice.${ext}`;
     const targetPath = path.join(UPLOADS_DIR, fileName);
     fs.writeFileSync(targetPath, buffer);
+
+    // Also write to public folder for static file serving fallback
+    try {
+      const pubDir = path.join(process.cwd(), 'public');
+      if (fs.existsSync(pubDir)) {
+        fs.writeFileSync(path.join(pubDir, 'welcome_voice.mp3'), buffer);
+      }
+    } catch (e) {}
+
     return `/api/welcome-audio?t=${Date.now()}`;
   } catch (err) {
     console.error('Error saving audio file to disk:', err);

@@ -209,7 +209,6 @@ export const WelcomeVoice: React.FC<WelcomeVoiceProps> = ({ settings, onSettings
         }
 
         const audio = new Audio();
-        audio.crossOrigin = 'anonymous';
         audio.src = trimmedUrl;
         audio.volume = volume;
         audio.preload = 'auto';

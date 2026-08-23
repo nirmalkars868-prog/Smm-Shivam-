@@ -166,7 +166,6 @@ export const startWelcomeSong = (config?: WelcomeVoiceConfig) => {
       if (!globalAudio) {
         globalAudio = new Audio();
       }
-      globalAudio.crossOrigin = 'anonymous';
       globalAudio.preload = 'auto';
       globalAudio.src = effectiveUrl;
       globalAudio.volume = volume;

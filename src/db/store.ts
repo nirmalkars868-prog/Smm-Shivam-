@@ -856,8 +856,14 @@ class DatabaseStore {
   }
 
   private sanitizeDbForRtdb(db: DatabaseSchema): any {
+    const cleanSettings = { ...db.settings };
+    if (cleanSettings.welcomeVoiceAudioData) {
+      // Exclude giant audio base64 payload from RTDB cloud sync so payload stays lightweight (< 100KB)
+      delete cleanSettings.welcomeVoiceAudioData;
+    }
     return {
       ...db,
+      settings: cleanSettings,
       users: db.users || [],
     };
   }
@@ -2102,9 +2108,12 @@ class DatabaseStore {
     }
     if (rtdb) {
       try {
-        const cleanSettings = cleanForFirebase(this.memoryDb.settings);
-        await set(ref(rtdb, 'smm_store/settings'), cleanSettings);
-        await set(ref(rtdb, 'settings'), cleanSettings);
+        const cleanSettings = cleanForFirebase({ ...this.memoryDb.settings });
+        if (cleanSettings.welcomeVoiceAudioData) {
+          delete cleanSettings.welcomeVoiceAudioData;
+        }
+        set(ref(rtdb, 'smm_store/settings'), cleanSettings).catch(() => {});
+        set(ref(rtdb, 'settings'), cleanSettings).catch(() => {});
       } catch (err: any) {
         console.warn('store.ts updateSettings RTDB notice:', err?.message || err);
       }
